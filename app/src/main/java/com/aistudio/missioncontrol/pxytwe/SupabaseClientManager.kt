@@ -73,8 +73,8 @@ object SupabaseClientManager {
 
     val client: SupabaseClient by lazy {
         createSupabaseClient(
-            supabaseUrl = "https://jyiqhqxjoahlxflaated.supabase.co",
-            supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp5aXFocXhqb2FobHhmbGFhdGVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzIwMjksImV4cCI6MjEwMTAwODAyOX0.Fel6E89P2A-RIhoHv3LYra1ycPxPZG8nYiet8IhDRzg"
+            supabaseUrl = BuildConfig.SUPABASE_URL,
+            supabaseKey = BuildConfig.SUPABASE_KEY
         ) {
             httpEngine = CIO.create()
             install(Postgrest)
