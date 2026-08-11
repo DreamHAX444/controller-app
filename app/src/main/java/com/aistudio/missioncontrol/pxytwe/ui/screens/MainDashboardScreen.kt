@@ -1,6 +1,7 @@
 package com.aistudio.missioncontrol.pxytwe.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,19 +95,12 @@ fun MainDashboardScreen(
     )
 
     Scaffold(
-        topBar = {
-            // Ponytail: E3 was a silent 7s retry loop. Tiny strip with a
-            // color-coded dot. Updating state is read from a single state
-            // flow on SupabaseClientManager — no recomposition churn,
-            // no subscriptions to wire up here.
-            RealtimeStatusStrip()
-        },
         bottomBar = {}
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = innerPadding.calculateTopPadding())
+                // Let the NavHost (and Map) fill the entire screen (edge-to-edge)
         ) {
             NavHost(
                 navController = navController,
@@ -140,6 +134,9 @@ fun MainDashboardScreen(
             }
         }
 
+        // Floating Realtime Status Strip
+        RealtimeStatusStrip(modifier = Modifier.align(Alignment.TopEnd))
+
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence.value
         androidx.compose.animation.AnimatedVisibility(
             visible = !isDrawingGeofence,
@@ -169,7 +166,7 @@ fun MainDashboardScreen(
 }
 
 @Composable
-private fun RealtimeStatusStrip() {
+private fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
     val state by com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
         .connectionState
         .collectAsState()
@@ -185,26 +182,28 @@ private fun RealtimeStatusStrip() {
         else -> "—" to StatusUnknown
     }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+        modifier = modifier
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(end = 16.dp, top = 16.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f), shape = CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), CircleShape)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
     ) {
         Box(
             modifier = androidx.compose.ui.Modifier
-                .size(8.dp)
+                .size(6.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(color)
         )
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(4.dp))
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
             letterSpacing = 1.sp,
         )
     }

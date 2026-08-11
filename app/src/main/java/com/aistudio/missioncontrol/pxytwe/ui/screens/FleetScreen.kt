@@ -446,7 +446,7 @@ fun FleetScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             shadowElevation = 8.dp,
                             modifier = Modifier
@@ -497,10 +497,10 @@ fun FleetScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .widthIn(max = 240.dp)
                                 .padding(top = 8.dp)
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
