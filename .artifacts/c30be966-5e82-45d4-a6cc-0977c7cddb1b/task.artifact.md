@@ -1,0 +1,24 @@
+- [x] Update build system and dependencies
+    - [x] Upgrade Gradle to 9.6.1 in `gradle-wrapper.properties`
+    - [x] Update `libs.versions.toml` with latest versions and remove unused entries
+    - [x] Update `app/build.gradle.kts` (targetSdk 36, cleanup)
+- [x] Clean up Android Manifest and Resources
+    - [x] Remove redundant label and unused namespace in `AndroidManifest.xml`
+    - [x] Remove unused colors in `colors.xml`
+- [x] Refactor Kotlin code and fix Lint issues
+    - [x] `LoadingScreen.kt`: `mutableFloatStateOf` and `Duration`
+    - [x] `PinLockScreen.kt`: `Duration` and imports
+    - [x] `AlertsScreen.kt`: Fix empty condition and imports
+    - [x] `LiveFeedScreen.kt`: Fix empty conditions and lift assignments
+    - [x] `FleetScreen.kt`: Remove redundant qualifiers and imports
+    - [x] `ConnectionRequestScreen.kt`: Remove unused parameter
+    - [x] `ScreenCaptureScreen.kt`: Remove unused parameters
+    - [x] `GeofenceUtils.kt`: Fix typo
+    - [x] Remove unused imports in `SharedComponents.kt`, `Theme.kt`, `MainActivity.kt`
+- [x] Fix Documentation and Data Files
+    - [x] Fix table formatting in all `.md` files (Applied newlines and spaces)
+    - [x] Fix spelling and proofreading in various files (Fixed "YouTube", "SaaS", "whitepaper", etc.)
+- [x] Verify changes
+    - [x] Gradle Sync
+    - [x] Assemble Debug build
+    - [x] Lint check verification
