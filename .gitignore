@@ -89,7 +89,6 @@ CTestTestfile.cmake
 .DS_Store
 
 # User-specific
-.agents/
 .artifacts/
 jdwp_list.txt
 temp_fleet.kt
