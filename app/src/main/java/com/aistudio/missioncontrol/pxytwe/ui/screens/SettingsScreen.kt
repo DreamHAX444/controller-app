@@ -23,13 +23,18 @@ import androidx.compose.ui.unit.sp
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 import com.aistudio.missioncontrol.pxytwe.audio.AudioMonitorRepository
 import com.aistudio.missioncontrol.pxytwe.security.SecurityManager
+import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager
+import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeMode
 
 @Composable
 fun SettingsScreen() {
     val context = LocalContext.current
     val securityManager = remember { SecurityManager(context) }
     var pinResetDialog by remember { mutableStateOf(false) }
+    var themeDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    
+    val currentTheme by ThemeManager.themeMode.collectAsState()
 
     // EncryptedSharedPreferences read on the IO dispatcher — no main-thread
     // crypto on cold start.
@@ -84,6 +89,12 @@ fun SettingsScreen() {
         ) { pinResetDialog = true }
 
         SettingsRow(
+            icon = Icons.Default.Palette,
+            label = "Theme",
+            value = currentTheme.name
+        ) { themeDialog = true }
+
+        SettingsRow(
             icon = Icons.Default.Hub,
             label = "Supabase Realtime",
             value = realtimeStatusLabel
@@ -106,8 +117,8 @@ fun SettingsScreen() {
         // About blurb
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
@@ -130,6 +141,9 @@ fun SettingsScreen() {
 
     if (pinResetDialog) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onDismissRequest = { pinResetDialog = false },
             title = { Text("Reset Master PIN?") },
             text = { Text("You'll be required to set a new PIN on next launch. This can't be undone.") },
@@ -148,7 +162,46 @@ fun SettingsScreen() {
                 ) { Text("RESET") }
             },
             dismissButton = {
-                TextButton(onClick = { pinResetDialog = false }) { Text("CANCEL") }
+                TextButton(onClick = { pinResetDialog = false }) { Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        )
+    }
+
+    if (themeDialog) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            onDismissRequest = { themeDialog = false },
+            title = { Text("Select Theme") },
+            text = {
+                Column {
+                    ThemeMode.values().forEach { mode ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    ThemeManager.setTheme(mode)
+                                    themeDialog = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentTheme == mode,
+                                onClick = {
+                                    ThemeManager.setTheme(mode)
+                                    themeDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(mode.name, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { themeDialog = false }) { Text("CLOSE", color = MaterialTheme.colorScheme.primary) }
             }
         )
     }
@@ -158,8 +211,8 @@ fun SettingsScreen() {
 private fun SettingsRow(icon: ImageVector, label: String, value: String, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))

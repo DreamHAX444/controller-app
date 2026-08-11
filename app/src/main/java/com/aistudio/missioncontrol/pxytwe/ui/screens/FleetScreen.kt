@@ -220,12 +220,38 @@ fun FleetScreen(
         val geofencePointsList = currentGeofencePoints.toList()
         val savedFencesList = savedGeofences.toList()
 
+        fun frameMapSelection(targetDevice: String) {
+            if (targetDevice == "All Devices") {
+                if (devicesList.isEmpty()) {
+                    mapView.controller.animateTo(startPoint)
+                    mapView.controller.setZoom(15.0)
+                } else if (devicesList.size == 1) {
+                    mapView.controller.animateTo(devicesList.first().point)
+                    mapView.controller.setZoom(17.0)
+                } else {
+                    val points = devicesList.map { it.point }
+                    val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(points)
+                    if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
+                        mapView.controller.animateTo(points.first())
+                        mapView.controller.setZoom(17.0)
+                    } else {
+                        mapView.zoomToBoundingBox(boundingBox, true, 150)
+                    }
+                }
+            } else {
+                val device = devicesList.find { it.name == targetDevice }
+                if (device != null) {
+                    mapView.controller.animateTo(device.point)
+                    mapView.controller.setZoom(17.0)
+                }
+            }
+        }
+
         // Auto-center on first device if not already centered
         var hasInitialCentered by remember { mutableStateOf(false) }
         LaunchedEffect(devicesList.isNotEmpty()) {
             if (devicesList.isNotEmpty() && !hasInitialCentered) {
-                val firstDevice = devicesList.first()
-                mapView.controller.animateTo(firstDevice.point)
+                frameMapSelection(selectedDevice)
                 hasInitialCentered = true
             }
         }
@@ -387,8 +413,8 @@ fun FleetScreen(
         if (devicesList.isEmpty() && !isDrawingGeofence.value) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -446,8 +472,8 @@ fun FleetScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             shadowElevation = 8.dp,
                             modifier = Modifier
                                 .clickable { isDropdownExpanded = !isDropdownExpanded }
@@ -456,11 +482,12 @@ fun FleetScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val dotColor = if (isAwake) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (selectedDevice == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                        .background(dotColor)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
@@ -497,8 +524,8 @@ fun FleetScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             modifier = Modifier
                                 .widthIn(max = 240.dp)
                                 .padding(top = 8.dp)
@@ -514,26 +541,24 @@ fun FleetScreen(
                                             .clickable {
                                                 updateSelectedDevice(deviceName)
                                                 isDropdownExpanded = false
-                                                if (deviceName == "All Devices") {
-                                                    mapView.controller.animateTo(startPoint)
-                                                    mapView.controller.setZoom(15.0)
-                                                } else {
-                                                    val device = devicesList.find { it.name == deviceName }
-                                                    if (device != null) {
-                                                        mapView.controller.animateTo(device.point)
-                                                        mapView.controller.setZoom(17.0)
-                                                    }
-                                                }
+                                                frameMapSelection(deviceName)
                                             }
                                             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.5f) else Color.Transparent)
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        val deviceIsLive = if (deviceName == "All Devices") {
+                                            activeMap.values.any { currentTime - it.lastSeen < 15000 }
+                                        } else {
+                                            val dev = activeMap[deviceName]
+                                            dev != null && (currentTime - dev.lastSeen < 15000)
+                                        }
+                                        val itemDotColor = if (deviceIsLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(if (deviceName == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                                .background(itemDotColor)
                                         )
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(
@@ -556,6 +581,9 @@ fun FleetScreen(
         
         if (showDeleteConfirmation.value) {
             AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 onDismissRequest = { showDeleteConfirmation.value = false },
                 title = { Text("Delete Geofence?") },
                 text = { Text("This action cannot be undone. Are you sure you want to remove this zone?") },
@@ -575,10 +603,9 @@ fun FleetScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirmation.value = false }) {
-                        Text("CANCEL")
+                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(28.dp)
             )
         }
@@ -603,8 +630,8 @@ fun FleetScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                     shadowElevation = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -817,20 +844,6 @@ fun FleetScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(vertical = 8.dp)
                         ) {
-                        IconButton(onClick = { mapView.controller.zoomIn() }) {
-                            Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        IconButton(onClick = { mapView.controller.zoomOut() }) {
-                            Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
                         IconButton(onClick = { 
                             isDrawingGeofence.value = true
                             originalGeofencePoints.value = null
@@ -844,16 +857,7 @@ fun FleetScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                         )
                         IconButton(onClick = { 
-                            if (selectedDevice != "All Devices") {
-                                val device = devicesList.find { it.name == selectedDevice }
-                                if (device != null) {
-                                    mapView.controller.animateTo(device.point)
-                                    mapView.controller.setZoom(17.0)
-                                }
-                            } else if (devicesList.isNotEmpty()) {
-                                val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(devicesList.map { it.point })
-                                mapView.zoomToBoundingBox(boundingBox, true, 100)
-                            }
+                            frameMapSelection(selectedDevice)
                         }) {
                             Icon(Icons.Default.MyLocation, contentDescription = "My Location", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -935,7 +939,7 @@ fun FleetScreen(
                                     modifier = Modifier
                                         .size(10.dp)
                                         .clip(CircleShape)
-                                        .background(if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                        .background(if (isLive) Color(0xFF4ADE80).copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(

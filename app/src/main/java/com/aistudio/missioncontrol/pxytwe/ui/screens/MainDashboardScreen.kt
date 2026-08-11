@@ -95,6 +95,7 @@ fun MainDashboardScreen(
     )
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {}
     ) { innerPadding ->
         Box(
@@ -135,7 +136,9 @@ fun MainDashboardScreen(
         }
 
         // Floating Realtime Status Strip
-        RealtimeStatusStrip(modifier = Modifier.align(Alignment.TopEnd))
+        if (currentRoute != DashboardTab.Devices.route) {
+            RealtimeStatusStrip(modifier = Modifier.align(Alignment.TopEnd))
+        }
 
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence.value
         androidx.compose.animation.AnimatedVisibility(
@@ -185,8 +188,8 @@ private fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
         modifier = modifier
             .statusBarsPadding()
             .padding(end = 16.dp, top = 16.dp)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f), shape = CircleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), CircleShape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.End,
@@ -253,8 +256,8 @@ private fun FloatingNavigationBar(
             .padding(horizontal = 24.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 8.dp
     ) {
         Row(
@@ -277,7 +280,7 @@ private fun FloatingNavigationBar(
                         Icon(
                             imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                             contentDescription = tab.title,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))

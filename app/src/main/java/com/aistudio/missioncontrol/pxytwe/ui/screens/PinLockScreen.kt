@@ -239,7 +239,8 @@ fun PinLockScreen(
                                         text = key,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 32.sp,
-                                        fontWeight = FontWeight.Light
+                                        fontWeight = FontWeight.Light,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                     )
                                 }
                             }

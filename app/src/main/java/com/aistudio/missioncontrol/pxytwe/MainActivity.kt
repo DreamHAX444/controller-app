@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize central AppState to start realtime streams
         com.aistudio.missioncontrol.pxytwe.AppState.initialize()
+        
+        // Initialize ThemeManager for System/Light/Dark switching
+        com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager.init(applicationContext)
 
         Log.d(TAG, "MainActivity launched successfully! Hello from Logcat!")
         enableEdgeToEdge()
