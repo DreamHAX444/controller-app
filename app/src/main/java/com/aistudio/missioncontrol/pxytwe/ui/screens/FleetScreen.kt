@@ -21,6 +21,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerGreen
+import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerCyan
+import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerYellow
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -107,9 +111,9 @@ fun FleetScreen(
         }
         val devicesList = activeMap.values.mapIndexed { idx, dev ->
             val color = when(idx % 3) {
-                0 -> android.graphics.Color.GREEN
-                1 -> android.graphics.Color.CYAN
-                else -> android.graphics.Color.YELLOW
+                0 -> MapMarkerGreen.toArgb()
+                1 -> MapMarkerCyan.toArgb()
+                else -> MapMarkerYellow.toArgb()
             }
             MapDevice(dev.name, GeoPoint(dev.lat, dev.lon), color, dev.heading)
         }
@@ -302,7 +306,7 @@ fun FleetScreen(
                         if (dev.history.size >= 2) {
                             val polyline = Polyline()
                             polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
-                            polyline.outlinePaint.color = ColorUtils.setAlphaComponent(android.graphics.Color.CYAN, 100)
+                            polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
                             polyline.outlinePaint.strokeWidth = 4f
                             historyOverlay.add(polyline)
                         }
@@ -313,11 +317,19 @@ fun FleetScreen(
                 drawingOverlay.items.clear()
                 val activeColor = currentGeofenceColor.intValue
                 if (geofencePointsList.isNotEmpty()) {
-                    geofencePointsList.forEach { pt ->
+                    geofencePointsList.forEachIndexed { index, pt ->
                         val marker = Marker(view)
                         marker.position = pt
                         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         marker.icon = drawingPointBitmap.toDrawable(resources)
+                        marker.isDraggable = true
+                        marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                            override fun onMarkerDragStart(marker: Marker) {}
+                            override fun onMarkerDrag(marker: Marker) {}
+                            override fun onMarkerDragEnd(marker: Marker) {
+                                currentGeofencePoints[index] = marker.position
+                            }
+                        })
                         drawingOverlay.add(marker)
                     }
 
@@ -416,7 +428,8 @@ fun FleetScreen(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-                .align(Alignment.TopCenter)
+                .align(Alignment.TopCenter),
+            contentAlignment = Alignment.TopCenter
         ) {
             AnimatedVisibility(
                 visible = !isDrawingGeofence.value,
@@ -664,19 +677,25 @@ fun FleetScreen(
                                 luxuryColors.forEach { color ->
                                     Box(
                                         modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(color))
-                                            .border(
-                                                width = if (currentGeofenceColor.intValue == color) 2.dp else 0.dp,
-                                                color = if (currentGeofenceColor.intValue == color) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                                shape = CircleShape
-                                            )
+                                            .size(48.dp)
                                             .clickable { currentGeofenceColor.intValue = color },
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (currentGeofenceColor.intValue == color) {
-                                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(color))
+                                                .border(
+                                                    width = if (currentGeofenceColor.intValue == color) 2.dp else 0.dp,
+                                                    color = if (currentGeofenceColor.intValue == color) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                                    shape = CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (currentGeofenceColor.intValue == color) {
+                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                            }
                                         }
                                     }
                                 }
@@ -865,25 +884,25 @@ fun FleetScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 104.dp)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 112.dp)
         ) {
             AnimatedVisibility(
                 visible = selectedDevice != "All Devices" && !isDrawingGeofence.value,
-                enter = slideInHorizontally(
-                    initialOffsetX = { -it },
+                enter = slideInVertically(
+                    initialOffsetY = { it / 2 },
                     animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
                 ) + fadeIn(),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { -it },
+                exit = slideOutVertically(
+                    targetOffsetY = { it / 2 },
                     animationSpec = tween(200)
                 ) + fadeOut()
             ) {
                 Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(32.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                    shadowElevation = 0.dp,
+                    shadowElevation = 8.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {

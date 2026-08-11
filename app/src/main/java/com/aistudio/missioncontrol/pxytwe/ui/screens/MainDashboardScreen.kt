@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.GraphicEq
@@ -32,6 +34,11 @@ import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.outlined.Bolt
+import com.aistudio.missioncontrol.pxytwe.ui.theme.StatusLive
+import com.aistudio.missioncontrol.pxytwe.ui.theme.StatusConnecting
+import com.aistudio.missioncontrol.pxytwe.ui.theme.StatusReconnecting
+import com.aistudio.missioncontrol.pxytwe.ui.theme.StatusOffline
+import com.aistudio.missioncontrol.pxytwe.ui.theme.StatusUnknown
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -94,66 +101,19 @@ fun MainDashboardScreen(
             // no subscriptions to wire up here.
             RealtimeStatusStrip()
         },
-        bottomBar = {
-            // Ponytail: stock Material 3 NavigationBar — full-bleed, hairline divider,
-            // ≥48 dp hit target, 12 sp label always visible, 2 dp underline as the
-            // only active affordance. Reads as system chrome, not custom fab.
-            NavigationBar(
-                modifier = Modifier.fillMaxWidth(),
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 0.dp,
-            ) {
-                tabs.forEach { tab ->
-                    val isSelected = currentRoute == tab.route
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = {
-                            if (!isSelected) {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = tab.title,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        },
-                        label = {
-                            Text(
-                                text = tab.title,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                ),
-                            )
-                        },
-                        alwaysShowLabel = true,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            indicatorColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ),
-                        modifier = Modifier.heightIn(min = 56.dp),
-                    )
-                }
-            }
-        }
+        bottomBar = {}
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = DashboardTab.Map.route,
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(top = innerPadding.calculateTopPadding())
+        ) {
+            NavHost(
+                navController = navController,
+                startDestination = DashboardTab.Map.route,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (currentRoute == DashboardTab.Map.route) 0.dp else 100.dp),
             enterTransition = {
                 androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(220)) +
                 androidx.compose.animation.scaleIn(initialScale = 0.98f, animationSpec = androidx.compose.animation.core.tween(220))
@@ -179,6 +139,32 @@ fun MainDashboardScreen(
                 SettingsScreen()
             }
         }
+
+        val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence.value
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !isDrawingGeofence,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+            enter = androidx.compose.animation.slideInVertically(initialOffsetY = { it }) + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutVertically(targetOffsetY = { it }) + androidx.compose.animation.fadeOut()
+        ) {
+            FloatingNavigationBar(
+                currentRoute = currentRoute,
+                tabs = tabs,
+                onNavigate = { tab ->
+                    val isSelected = currentRoute == tab.route
+                    if (!isSelected) {
+                        navController.navigate(tab.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                }
+            )
+        }
+        }
     }
 }
 
@@ -189,14 +175,14 @@ private fun RealtimeStatusStrip() {
         .collectAsState()
     val (label, color) = when (state) {
         com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connected ->
-            "LIVE" to androidx.compose.ui.graphics.Color(0xFF00E676)
+            "LIVE" to StatusLive
         com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connecting ->
-            "CONNECTING…" to androidx.compose.ui.graphics.Color(0xFFFFC107)
+            "CONNECTING…" to StatusConnecting
         com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Reconnecting ->
-            "RECONNECTING…" to androidx.compose.ui.graphics.Color(0xFFFF9800)
+            "RECONNECTING…" to StatusReconnecting
         com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Disconnected ->
-            "OFFLINE" to androidx.compose.ui.graphics.Color(0xFFFF5252)
-        else -> "—" to androidx.compose.ui.graphics.Color(0xFF888888)
+            "OFFLINE" to StatusOffline
+        else -> "—" to StatusUnknown
     }
     Row(
         modifier = Modifier
@@ -252,6 +238,59 @@ fun PlaceholderScreen(title: String, subtitle: String) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun FloatingNavigationBar(
+    currentRoute: String?,
+    tabs: List<DashboardTab>,
+    onNavigate: (DashboardTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.material3.Surface(
+        modifier = modifier
+            .padding(horizontal = 24.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabs.forEach { tab ->
+                val isSelected = currentRoute == tab.route
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { onNavigate(tab) }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                            contentDescription = tab.title,
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                        )
+                    }
+                }
+            }
         }
     }
 }

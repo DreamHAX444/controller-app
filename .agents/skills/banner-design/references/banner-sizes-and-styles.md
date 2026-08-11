@@ -3,7 +3,6 @@
 ## Complete Banner Sizes
 
 ### Social Media
-
 | Platform | Type | Size (px) | Aspect Ratio |
 |----------|------|-----------|--------------|
 | Facebook | Cover (desktop) | 820 × 312 | ~2.6:1 |
@@ -20,7 +19,6 @@
 | Pinterest | Pin | 1000 × 1500 | 2:3 |
 
 ### Web / Display Ads (Google Display Network)
-
 | Name | Size (px) | Notes |
 |------|-----------|-------|
 | Medium Rectangle | 300 × 250 | Highest CTR |
@@ -33,7 +31,6 @@
 | Billboard | 970 × 250 | Desktop hero |
 
 ### Website
-
 | Type | Size (px) |
 |------|-----------|
 | Full-width hero | 1920 × 600–1080 |
@@ -42,7 +39,6 @@
 | Email header | 600 × 200 |
 
 ### Print
-
 | Type | Size |
 |------|------|
 | Roll-up | 850mm × 2000mm |
@@ -116,7 +112,7 @@
 
 Use these search queries on Pinterest for art direction references:
 - `[purpose] banner design [style]` (e.g., "social media banner minimalist")
-- `[platform] cover design inspiration` (e.g., "YouTube channel art design")
+- `[platform] cover design inspiration` (e.g., "youtube channel art design")
 - `creative banner layout [industry]` (e.g., "creative banner layout tech startup")
 - `[style] graphic design 2026` (e.g., "gradient graphic design 2026")
-- `banner ad design [product type]` (e.g., "banner ad design SaaS")
+- `banner ad design [product type]` (e.g., "banner ad design saas")

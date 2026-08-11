@@ -48,7 +48,6 @@ project-root/
 ```
 
 ### Components
-
 | Component | Format | Required | Examples |
 |-----------|--------|----------|----------|
 | type | lowercase | Yes | banner, logo, design, video |
@@ -109,11 +108,10 @@ infographic_evergreen_pricing-comparison_20251209.png
 ## Tagging System
 
 ### Standard Tags
-
 | Category | Values |
 |----------|--------|
 | status | draft, review, approved, archived |
-| platform | instagram, twitter, linkedin, facebook, YouTube, email, web |
+| platform | instagram, twitter, linkedin, facebook, youtube, email, web |
 | content-type | promotional, educational, brand, product, testimonial |
 | format | 1x1, 4x5, 9x16, 16x9, story, reel, banner |
 | source | imagen-4, veo-3, user-upload, canva, figma |
