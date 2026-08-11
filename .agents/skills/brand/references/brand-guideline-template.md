@@ -16,21 +16,18 @@ Use this template to create comprehensive brand guidelines for any project.
 ## 1. Color Palette
 
 ### Primary Colors
-
 | Name | Hex | RGB | Usage |
 |------|-----|-----|-------|
 | {Name} | #{hex} | rgb({r},{g},{b}) | Primary brand color, CTAs, headers |
 | {Name} | #{hex} | rgb({r},{g},{b}) | Supporting accent |
 
 ### Secondary Colors
-
 | Name | Hex | RGB | Usage |
 |------|-----|-----|-------|
 | {Name} | #{hex} | rgb({r},{g},{b}) | Secondary elements |
 | {Name} | #{hex} | rgb({r},{g},{b}) | Highlights |
 
 ### Neutral Palette
-
 | Name | Hex | RGB | Usage |
 |------|-----|-----|-------|
 | Background | #{hex} | rgb({r},{g},{b}) | Page backgrounds |
@@ -53,7 +50,6 @@ Use this template to create comprehensive brand guidelines for any project.
 ```
 
 ### Type Scale
-
 | Element | Font | Weight | Size (Desktop/Mobile) | Line Height |
 |---------|------|--------|----------------------|-------------|
 | H1 | {font} | 700 | 48px / 32px | 1.2 |
@@ -94,13 +90,11 @@ Minimum clear space = height of logo mark
 {Trait 3}: {Description}
 
 ### Voice Chart
-
 | Trait | We Are | We Are Not |
 |-------|--------|------------|
 | {Trait} | {Description} | {Anti-description} |
 
 ### Tone by Context
-
 | Context | Tone | Example |
 |---------|------|---------|
 | Marketing | {tone} | "{example}" |

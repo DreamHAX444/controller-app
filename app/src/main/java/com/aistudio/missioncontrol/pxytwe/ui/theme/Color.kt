@@ -41,3 +41,15 @@ val errorDark = Color(0xFFEF4444)
 val errorContainerDark = Color(0xFF93000A)
 val onErrorDark = Color(0xFF690005)
 val onErrorContainerDark = Color(0xFFFFDAD6)
+
+// Semantic Map Marker Colors
+val MapMarkerGreen = Color(0xFF22C55E)
+val MapMarkerCyan = Color(0xFF06B6D4)
+val MapMarkerYellow = Color(0xFFEAB308)
+
+// Semantic Status Colors
+val StatusLive = Color(0xFF00E676)
+val StatusConnecting = Color(0xFFFFC107)
+val StatusReconnecting = Color(0xFFFF9800)
+val StatusOffline = Color(0xFFFF5252)
+val StatusUnknown = Color(0xFF888888)

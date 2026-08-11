@@ -85,7 +85,6 @@ Before detailed review, verify:
 - [ ] Metadata included
 
 ### Platform Requirements
-
 | Platform | Verified |
 |----------|----------|
 | Instagram | [ ] Correct dimensions |
