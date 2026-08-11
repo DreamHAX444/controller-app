@@ -387,8 +387,8 @@ fun FleetScreen(
         if (devicesList.isEmpty() && !isDrawingGeofence.value) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -446,8 +446,8 @@ fun FleetScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             shadowElevation = 8.dp,
                             modifier = Modifier
                                 .clickable { isDropdownExpanded = !isDropdownExpanded }
@@ -456,11 +456,12 @@ fun FleetScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val dotColor = if (isAwake) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (selectedDevice == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                        .background(dotColor)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
@@ -497,8 +498,8 @@ fun FleetScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             modifier = Modifier
                                 .widthIn(max = 240.dp)
                                 .padding(top = 8.dp)
@@ -529,11 +530,18 @@ fun FleetScreen(
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        val deviceIsLive = if (deviceName == "All Devices") {
+                                            activeMap.values.any { currentTime - it.lastSeen < 15000 }
+                                        } else {
+                                            val dev = activeMap[deviceName]
+                                            dev != null && (currentTime - dev.lastSeen < 15000)
+                                        }
+                                        val itemDotColor = if (deviceIsLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(if (deviceName == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                                .background(itemDotColor)
                                         )
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(
@@ -556,6 +564,9 @@ fun FleetScreen(
         
         if (showDeleteConfirmation.value) {
             AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 onDismissRequest = { showDeleteConfirmation.value = false },
                 title = { Text("Delete Geofence?") },
                 text = { Text("This action cannot be undone. Are you sure you want to remove this zone?") },
@@ -575,10 +586,9 @@ fun FleetScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirmation.value = false }) {
-                        Text("CANCEL")
+                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(28.dp)
             )
         }
@@ -603,8 +613,8 @@ fun FleetScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                     shadowElevation = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -935,7 +945,7 @@ fun FleetScreen(
                                     modifier = Modifier
                                         .size(10.dp)
                                         .clip(CircleShape)
-                                        .background(if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                        .background(if (isLive) Color(0xFF4ADE80).copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(

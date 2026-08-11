@@ -70,6 +70,9 @@ fun MicMonitorScreen(
 
     if (confirmExit) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             onDismissRequest = { confirmExit = false },
             title = { Text("Stop monitoring?") },
             text = { Text("The tracker's microphone is currently streaming. Stop the uplink and leave?") },
@@ -84,9 +87,8 @@ fun MicMonitorScreen(
                 ) { Text("STOP & LEAVE") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmExit = false }) { Text("STAY") }
+                TextButton(onClick = { confirmExit = false }) { Text("STAY", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(28.dp)
         )
     }
@@ -113,13 +115,13 @@ fun MicMonitorScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
-        containerColor = Color.Black
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -134,8 +136,8 @@ fun MicMonitorScreen(
                     .fillMaxWidth()
                     .height(200.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xFF0A0A0A))
-                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp)),
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 if (!ui.isMonitoring) {
@@ -143,20 +145,20 @@ fun MicMonitorScreen(
                         Icon(
                             imageVector = Icons.Default.MicOff,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.2f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             "SENSORS OFFLINE",
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.2f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             letterSpacing = 2.sp
                         )
                     }
                 } else if (ui.peakHistory.isEmpty()) {
                     CircularProgressIndicator(
-                        color = Color(0xFF00E676),
+                        color = MaterialTheme.colorScheme.primary,
                         strokeWidth = 2.dp,
                         modifier = Modifier.size(40.dp)
                     )
@@ -182,10 +184,10 @@ fun MicMonitorScreen(
             // Control Button
             Surface(
                 shape = CircleShape,
-                color = if (ui.isMonitoring) Color.Red.copy(alpha = 0.2f) else Color(0xFF00E676).copy(alpha = 0.2f),
+                color = if (ui.isMonitoring) MaterialTheme.colorScheme.error.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                 border = androidx.compose.foundation.BorderStroke(
                     2.dp,
-                    if (ui.isMonitoring) Color.Red else Color(0xFF00E676)
+                    if (ui.isMonitoring) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 ),
                 modifier = Modifier
                     .size(100.dp)
@@ -195,7 +197,7 @@ fun MicMonitorScreen(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     val icon = if (ui.isMonitoring) Icons.Default.Stop else Icons.Default.Mic
-                    val tint = if (ui.isMonitoring) Color.Red else Color(0xFF00E676)
+                    val tint = if (ui.isMonitoring) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     val disabledTint = tint.copy(alpha = 0.4f)
 
                     Icon(
@@ -225,9 +227,10 @@ fun MicMonitorScreen(
                             ),
                             label = "alpha"
                         )
+                        val errorColor = MaterialTheme.colorScheme.error
                         Canvas(modifier = Modifier.size(100.dp)) {
                             drawCircle(
-                                color = Color.Red,
+                                color = errorColor,
                                 radius = (size.minDimension / 2) * scale,
                                 alpha = alpha
                             )
@@ -248,9 +251,9 @@ fun MicMonitorScreen(
                 },
                 style = MaterialTheme.typography.labelLarge,
                 color = when (ui.status) {
-                    MonitorStatus.Failed -> Color(0xFFFF5252)
-                    MonitorStatus.Stopping, MonitorStatus.Idle -> Color.White.copy(alpha = 0.6f)
-                    else -> if (ui.isMonitoring) Color.Red else Color(0xFF00E676)
+                    MonitorStatus.Failed -> MaterialTheme.colorScheme.error
+                    MonitorStatus.Stopping, MonitorStatus.Idle -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    else -> if (ui.isMonitoring) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 },
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
@@ -262,7 +265,7 @@ fun MicMonitorScreen(
                 Text(
                     text = err,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFFF5252),
+                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(horizontal = 8.dp)
                 )
             }
@@ -278,13 +281,13 @@ fun MicMonitorScreen(
                 Text(
                     "SYSTEM CONSOLE",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                     letterSpacing = 1.5.sp
                 )
                 Text(
                     "${ui.logs.size} entries",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.3f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
                 )
             }
 
@@ -298,9 +301,9 @@ fun MicMonitorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                color = Color(0xFF050505),
+                color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
                 LazyColumn(
                     state = listState,
@@ -309,10 +312,10 @@ fun MicMonitorScreen(
                 ) {
                     items(ui.logs) { log ->
                         val color = when (log.kind) {
-                            AudioMonitorViewModel.LogEntry.Kind.Good -> Color(0xFF00E676)
-                            AudioMonitorViewModel.LogEntry.Kind.Warn -> Color(0xFFFFC107)
-                            AudioMonitorViewModel.LogEntry.Kind.Error -> Color(0xFFFF5252)
-                            AudioMonitorViewModel.LogEntry.Kind.Info -> Color.White.copy(alpha = 0.7f)
+                            AudioMonitorViewModel.LogEntry.Kind.Good -> MaterialTheme.colorScheme.primary
+                            AudioMonitorViewModel.LogEntry.Kind.Warn -> MaterialTheme.colorScheme.tertiary
+                            AudioMonitorViewModel.LogEntry.Kind.Error -> MaterialTheme.colorScheme.error
+                            AudioMonitorViewModel.LogEntry.Kind.Info -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         }
                         Text(
                             text = "[${log.time}] ${log.text}",
@@ -331,11 +334,11 @@ fun MicMonitorScreen(
 @Composable
 private fun StatusRow(status: MonitorStatus, message: String?) {
     val (label, color) = when (status) {
-        MonitorStatus.Idle -> "IDLE" to Color.White.copy(alpha = 0.5f)
-        MonitorStatus.Starting -> "STARTING…" to Color.Yellow
-        MonitorStatus.Live -> "LIVE" to Color(0xFF00E676)
-        MonitorStatus.Stopping -> "STOPPING…" to Color.Yellow
-        MonitorStatus.Failed -> "FAILED" to Color(0xFFFF5252)
+        MonitorStatus.Idle -> "IDLE" to MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+        MonitorStatus.Starting -> "STARTING…" to MaterialTheme.colorScheme.tertiary
+        MonitorStatus.Live -> "LIVE" to MaterialTheme.colorScheme.primary
+        MonitorStatus.Stopping -> "STOPPING…" to MaterialTheme.colorScheme.tertiary
+        MonitorStatus.Failed -> "FAILED" to MaterialTheme.colorScheme.error
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(color))
@@ -353,21 +356,22 @@ private fun StatusRow(status: MonitorStatus, message: String?) {
 private fun StatChip(label: String, value: String) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = Color.White.copy(alpha = 0.05f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.45f), letterSpacing = 1.sp)
-            Text(value, style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), letterSpacing = 1.sp)
+            Text(value, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 fun WaveformGraph(amplitudes: List<Float>) {
+    val primaryColor = MaterialTheme.colorScheme.primary
     Canvas(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 40.dp)) {
         val width = size.width
         val height = size.height
@@ -385,9 +389,9 @@ fun WaveformGraph(amplitudes: List<Float>) {
             drawLine(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF00E676).copy(alpha = 0.5f),
-                        Color(0xFF00E676),
-                        Color(0xFF00E676).copy(alpha = 0.5f)
+                        primaryColor.copy(alpha = 0.5f),
+                        primaryColor,
+                        primaryColor.copy(alpha = 0.5f)
                     )
                 ),
                 start = Offset(x, centerY - barHeight / 2),
