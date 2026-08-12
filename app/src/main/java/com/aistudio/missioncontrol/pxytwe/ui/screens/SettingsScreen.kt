@@ -59,10 +59,10 @@ fun SettingsScreen() {
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(modifier = Modifier.padding(bottom = 8.dp)) {
+        Column(modifier = Modifier.padding(bottom = 16.dp)) {
             Text(
                 "CONTROLLER",
                 style = MaterialTheme.typography.labelSmall,

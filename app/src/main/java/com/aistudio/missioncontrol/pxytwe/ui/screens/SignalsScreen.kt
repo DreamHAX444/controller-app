@@ -74,15 +74,21 @@ fun SignalsScreen() {
                 .padding(innerPadding)
                 .padding(horizontal = 24.dp)
         ) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "COMMAND CENTER",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 2.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(16.dp))
+            Column(modifier = Modifier.padding(vertical = 16.dp)) {
+                Text(
+                    text = "COMMAND CENTER",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 2.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Fleet Signals",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
 
             HeroFleetCard(
                 anyAwake = anyAwake,

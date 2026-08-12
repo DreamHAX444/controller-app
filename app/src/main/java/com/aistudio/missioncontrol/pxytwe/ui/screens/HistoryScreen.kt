@@ -47,12 +47,12 @@ fun HistoryScreen(micCallback: ((String) -> Unit)? = null) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
+            .padding(horizontal = 24.dp),
+        contentPadding = PaddingValues(vertical = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Column {
+            Column(modifier = Modifier.padding(bottom = 16.dp)) {
                 Text(
                     "DEVICE ACTIVITY",
                     style = MaterialTheme.typography.labelSmall,

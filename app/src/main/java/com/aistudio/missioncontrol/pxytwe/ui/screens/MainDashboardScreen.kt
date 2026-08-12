@@ -192,7 +192,7 @@ private fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .statusBarsPadding()
-            .padding(end = 16.dp, top = 16.dp)
+            .padding(end = 24.dp, top = 16.dp)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
             .padding(horizontal = 8.dp, vertical = 4.dp),

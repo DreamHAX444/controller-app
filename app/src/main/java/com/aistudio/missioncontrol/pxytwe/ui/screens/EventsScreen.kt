@@ -39,18 +39,25 @@ fun EventsScreen() {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp, start = 16.dp, end = 16.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp, start = 24.dp, end = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
-                    Text(
-                        text = "EVENT LOG",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                        Text(
+                            text = "EVENTS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = 2.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Event Log",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
                 }
                 
                 items(events) { event ->
