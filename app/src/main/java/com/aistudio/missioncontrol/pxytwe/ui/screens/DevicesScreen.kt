@@ -97,31 +97,21 @@ fun DevicesScreen(
                         letterSpacing = 2.sp
                     )
                     
-                    // Live Status Pill
-                    Surface(
-                        shape = RoundedCornerShape(percent = 50),
-                        color = ColorCard,
-                        border = BorderStroke(1.dp, ColorBorder)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(ColorLiveGreen)
-                            )
-                            Text(
-                                "LIVE",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = ColorTextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                        }
+                    // Live Status Indicator
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "LIVE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                            letterSpacing = 1.sp
+                        )
                     }
                 }
                 
