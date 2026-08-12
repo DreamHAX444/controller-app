@@ -91,26 +91,53 @@ class AudioMonitorViewModel(
         log("STARTING UPLINK TO $deviceId…")
 
         collectorJob = viewModelScope.launch {
+            // CRITICAL: the audio channel must be subscribed BEFORE we tell the
+            // tracker to start broadcasting. listenToAudioChunks() returns a cold
+            // callbackFlow that only subscribes when collected. We launch the
+            // collector first, wait for subscription confirmation, THEN send start_mic.
+            log("SUBSCRIBING TO AUDIO CHANNEL…")
+
+            val subscribed = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+            // Start collecting in a child coroutine — this triggers the callbackFlow
+            // subscription. The onSubscribed callback signals when the channel is ready.
+            val chunkCollector = launch {
+                try {
+                    AudioMonitorRepository.listenToAudioChunks(deviceId) {
+                        subscribed.complete(Unit)
+                    }.collectLatest { row ->
+                        onChunk(row)
+                    }
+                } catch (e: CancellationException) {
+                    if (!subscribed.isCompleted) subscribed.completeExceptionally(e)
+                    throw e
+                } catch (e: Exception) {
+                    if (!subscribed.isCompleted) subscribed.completeExceptionally(e)
+                    Log.e(TAG, "Chunk stream failed", e)
+                    log("CHUNK STREAM ERROR: ${e.message}", LogEntry.Kind.Error)
+                    _ui.update { it.copy(status = MonitorStatus.Failed, statusMessage = e.message) }
+                }
+            }
+
+            // Wait for the callbackFlow to confirm channel subscription (fast, <1s)
+            try {
+                subscribed.await()
+            } catch (e: Exception) {
+                log("SUBSCRIPTION FAILED: ${e.message}", LogEntry.Kind.Error)
+                _ui.update { it.copy(isMonitoring = false, status = MonitorStatus.Failed, statusMessage = e.message, error = e.message) }
+                return@launch
+            }
+            log("AUDIO CHANNEL READY. SENDING START COMMAND…")
+
             val cmdResult = AudioMonitorRepository.startMonitoring(deviceId)
             if (cmdResult.isFailure) {
                 val msg = cmdResult.exceptionOrNull()?.message ?: "Start failed"
                 _ui.update { it.copy(isMonitoring = false, status = MonitorStatus.Failed, statusMessage = msg, error = msg) }
                 log("UPLINK REJECTED: $msg", LogEntry.Kind.Error)
+                chunkCollector.cancel()
                 return@launch
             }
-            log("COMMAND SENT. AWAITING HANDSHAKE…")
-
-            try {
-                AudioMonitorRepository.listenToAudioChunks(deviceId).collectLatest { row ->
-                    onChunk(row)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Chunk stream failed", e)
-                log("CHUNK STREAM ERROR: ${e.message}", LogEntry.Kind.Error)
-                _ui.update { it.copy(status = MonitorStatus.Failed, statusMessage = e.message) }
-            }
+            log("COMMAND SENT. AWAITING AUDIO DATA…")
         }
 
         staleWatchdog = viewModelScope.launch {
@@ -132,6 +159,9 @@ class AudioMonitorViewModel(
         staleWatchdog = null
         player.stop()
         log("STOPPING UPLINK…")
+
+        // Clear local state synchronously so a rapid start() doesn't collide
+        deviceId = null
         _ui.update {
             it.copy(
                 isMonitoring = false,
@@ -143,12 +173,14 @@ class AudioMonitorViewModel(
             viewModelScope.launch {
                 val r = AudioMonitorRepository.stopMonitoring(did)
                 if (r.isFailure) log("STOP FAILED: ${r.exceptionOrNull()?.message}", LogEntry.Kind.Error)
-                _ui.update { it.copy(status = MonitorStatus.Idle, statusMessage = null) }
+                // Only update to Idle if no new session has started in the meantime
+                if (deviceId == null) {
+                    _ui.update { it.copy(status = MonitorStatus.Idle, statusMessage = null) }
+                }
             }
         } else {
             _ui.update { it.copy(status = MonitorStatus.Idle, statusMessage = null) }
         }
-        deviceId = null
     }
 
     private suspend fun onChunk(row: MediaRow) {

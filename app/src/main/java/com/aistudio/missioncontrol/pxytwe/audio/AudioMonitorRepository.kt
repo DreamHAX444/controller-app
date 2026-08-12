@@ -96,17 +96,21 @@ object AudioMonitorRepository {
     }
 
     suspend fun stopMonitoring(deviceId: String): Result<Unit> {
+        // Clear session state SYNCHRONOUSLY before the async command send.
+        // This prevents the race where a subsequent startMonitoring() sets
+        // _activeSession to a new device, and then this callback overwrites
+        // it with null.
+        _activeSession.value = null
         setStatus(MonitorStatus.Stopping, "Releasing $deviceId mic…")
         return try {
             SupabaseClientManager.sendCommand(deviceId, "stop_mic")
-            _activeSession.value = null
             setStatus(MonitorStatus.Idle, null)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "stopMonitoring insert failed for $deviceId", e)
-            _activeSession.value = null
+            // State is already cleared — don't re-null _activeSession
             setStatus(MonitorStatus.Idle, e.message ?: "Stop command failed (state cleared)")
             Result.failure(e)
         }
@@ -123,7 +127,7 @@ object AudioMonitorRepository {
      * names containing spaces ("Samsung SM-S908B") don't silently break
      * the subscription.
      */
-    fun listenToAudioChunks(deviceId: String): Flow<MediaRow> = callbackFlow {
+    fun listenToAudioChunks(deviceId: String, onSubscribed: (() -> Unit)? = null): Flow<MediaRow> = callbackFlow {
         val topic = "media-audio-$deviceId"
         val existing = client.realtime.subscriptions.values.find { it.topic == topic }
         if (existing != null) {
@@ -133,6 +137,8 @@ object AudioMonitorRepository {
         try {
             val broadcastFlow = channel.broadcastFlow<MediaRow>(event = "audio_chunk")
             channel.subscribe(blockUntilSubscribed = true)
+            // Signal that the channel is now subscribed and ready to receive
+            onSubscribed?.invoke()
             launch {
                 broadcastFlow.collect { record ->
                     if (record.type == AUDIO_TYPE) {
