@@ -70,4 +70,8 @@ class SecurityManager(context: Context) {
     suspend fun verifyPin(pin: String): Boolean = withContext(Dispatchers.IO) {
         prefs.getString("master_pin_hash", null)?.let { it == hashPin(pin) } ?: false
     }
+
+    suspend fun clearPin() = withContext(Dispatchers.IO) {
+        prefs.edit().remove("master_pin_hash").apply()
+    }
 }

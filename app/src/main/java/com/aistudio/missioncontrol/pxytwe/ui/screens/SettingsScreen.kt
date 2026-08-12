@@ -26,6 +26,7 @@ import com.aistudio.missioncontrol.pxytwe.audio.AudioMonitorRepository
 import com.aistudio.missioncontrol.pxytwe.security.SecurityManager
 import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager
 import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeMode
+import kotlinx.coroutines.launch
 
 private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
 private val ColorCard @Composable get() = MaterialTheme.colorScheme.surface
@@ -172,12 +173,12 @@ fun SettingsScreen(onNavigateToSiren: () -> Unit = {}) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val prefs = context.getSharedPreferences(
-                            "secure_prefs", android.content.Context.MODE_PRIVATE
-                        )
-                        prefs.edit().remove("master_pin_hash").apply()
-                        pinResetDialog = false
-                        Toast.makeText(context, "PIN cleared. Restart to set a new PIN.", Toast.LENGTH_LONG).show()
+                        scope.launch {
+                            securityManager.clearPin()
+                            isPinConfigured = false
+                            pinResetDialog = false
+                            Toast.makeText(context, "PIN cleared. Restart to set a new PIN.", Toast.LENGTH_LONG).show()
+                        }
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = ColorError)
                 ) { Text("RESET") }
