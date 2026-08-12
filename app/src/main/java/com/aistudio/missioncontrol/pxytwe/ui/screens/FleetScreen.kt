@@ -75,6 +75,7 @@ fun FleetScreen(
         
         val startPoint = remember { GeoPoint(37.7749, -122.4194) }
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence
+        val isDebugMode = com.aistudio.missioncontrol.pxytwe.AppState.isDebugDeviceMode
         val currentGeofencePoints = remember { mutableStateListOf<GeoPoint>() }
         val savedGeofences = remember { 
             val data = sharedPrefs.getString("saved_fences", "") ?: ""
@@ -371,6 +372,10 @@ fun FleetScreen(
                     val mapEventsReceiver = object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             if (p == null) return false
+                            if (isDebugMode.value) {
+                                com.aistudio.missioncontrol.pxytwe.AppState.injectDebugLocation(p.latitude, p.longitude)
+                                return true
+                            }
                             if (isDrawingGeofence.value) {
                                 currentGeofencePoints.add(p)
                                 return true
@@ -517,7 +522,29 @@ fun FleetScreen(
                 )
         )
 
-        if (devicesList.isEmpty() && !isDrawingGeofence.value) {
+        // Debug Device Floating Button
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp)
+                .navigationBarsPadding()
+        ) {
+            FloatingActionButton(
+                onClick = { 
+                    isDebugMode.value = !isDebugMode.value
+                    if (isDebugMode.value) {
+                        isDrawingGeofence.value = false
+                    }
+                },
+                containerColor = if (isDebugMode.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                contentColor = if (isDebugMode.value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = if (isDrawingGeofence.value) 80.dp else 0.dp)
+            ) {
+                Icon(Icons.Default.BugReport, contentDescription = "Debug Mode")
+            }
+        }
+
+        if (devicesList.isEmpty() && !isDrawingGeofence.value && !isDebugMode.value) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),

@@ -28,6 +28,7 @@ data class DeviceTelemetry(
 object AppState {
     val selectedDevice = mutableStateOf<String?>(null)
     val isDrawingGeofence = mutableStateOf(false)
+    val isDebugDeviceMode = mutableStateOf(false)
     
     // Live device telemetry received from Supabase
     val activeDevices = mutableStateMapOf<String, DeviceTelemetry>()
@@ -88,49 +89,57 @@ object AppState {
                 SupabaseClientManager.startListeningForPongs()
                 val locationsFlow = SupabaseClientManager.listenToLocations()
                 locationsFlow.collect { loc ->
-                    val existing = activeDevices[loc.device_id]
-                    val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
-                    newHistory.add(Pair(loc.latitude, loc.longitude))
-                    
-                    val updatedDev = DeviceTelemetry(
-                        name = loc.device_id,
-                        lat = loc.latitude,
-                        lon = loc.longitude,
-                        heading = loc.bearing,
-                        battery = 100,
-                        speed = 0f,
-                        lastSeen = System.currentTimeMillis(),
-                        history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
-                        updateCount = (existing?.updateCount ?: 0) + 1,
-                        locTimestamp = System.currentTimeMillis()
-                    )
-                    activeDevices[loc.device_id] = updatedDev
-
-                    val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
-                    val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
-                    val locGeo = org.osmdroid.util.GeoPoint(loc.latitude, loc.longitude)
-                    val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
-                    val previousZone = deviceCurrentZones[loc.device_id]
-                    
-                    if (currentZone != previousZone) {
-                        if (previousZone != null) {
-                            EventLogger.logEvent(loc.device_id, "GEOFENCE_EXIT", "Exited $previousZone")
-                        }
-                        if (currentZone != null) {
-                            EventLogger.logEvent(loc.device_id, "GEOFENCE_ENTER", "Entered $currentZone")
-                            playSiren()
-                        }
-                        if (currentZone == null) {
-                            deviceCurrentZones.remove(loc.device_id)
-                        } else {
-                            deviceCurrentZones[loc.device_id] = currentZone
-                        }
-                    }
+                    processLocationUpdate(loc.device_id, loc.latitude, loc.longitude, loc.bearing)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    private fun processLocationUpdate(deviceId: String, lat: Double, lon: Double, heading: Float) {
+        val existing = activeDevices[deviceId]
+        val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
+        newHistory.add(Pair(lat, lon))
+        
+        val updatedDev = DeviceTelemetry(
+            name = deviceId,
+            lat = lat,
+            lon = lon,
+            heading = heading,
+            battery = 100,
+            speed = 0f,
+            lastSeen = System.currentTimeMillis(),
+            history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
+            updateCount = (existing?.updateCount ?: 0) + 1,
+            locTimestamp = System.currentTimeMillis()
+        )
+        activeDevices[deviceId] = updatedDev
+
+        val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
+        val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
+        val locGeo = org.osmdroid.util.GeoPoint(lat, lon)
+        val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
+        val previousZone = deviceCurrentZones[deviceId]
+        
+        if (currentZone != previousZone) {
+            if (previousZone != null) {
+                EventLogger.logEvent(deviceId, "GEOFENCE_EXIT", "Exited $previousZone")
+            }
+            if (currentZone != null) {
+                EventLogger.logEvent(deviceId, "GEOFENCE_ENTER", "Entered $currentZone")
+                playSiren()
+            }
+            if (currentZone == null) {
+                deviceCurrentZones.remove(deviceId)
+            } else {
+                deviceCurrentZones[deviceId] = currentZone
+            }
+        }
+    }
+
+    fun injectDebugLocation(lat: Double, lon: Double) {
+        processLocationUpdate("DEBUG-DEV-1", lat, lon, 0f)
     }
 
     private fun parseSupabaseDate(dateString: String): Long {
