@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
         Configuration.getInstance().userAgentValue = packageName
 
         // Initialize central AppState to start realtime streams
-        com.aistudio.missioncontrol.pxytwe.AppState.initialize()
+        com.aistudio.missioncontrol.pxytwe.AppState.initialize(applicationContext)
         
         // Initialize ThemeManager for System/Light/Dark switching
         com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager.init(applicationContext)

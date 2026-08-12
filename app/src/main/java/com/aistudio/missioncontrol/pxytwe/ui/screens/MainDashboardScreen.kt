@@ -75,6 +75,7 @@ sealed class DashboardTab(
     object Devices : DashboardTab("devices", "Devices", Icons.Filled.Devices, Icons.Outlined.Devices)
     object Mic : DashboardTab("mic_home", "Mic", Icons.Filled.GraphicEq, Icons.Outlined.GraphicEq)
     object Signals : DashboardTab("signals", "Signals", Icons.Filled.Bolt, Icons.Outlined.Bolt)
+    object Events : DashboardTab("events", "Events", Icons.Filled.History, Icons.Outlined.History)
     object Settings : DashboardTab("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
@@ -91,6 +92,7 @@ fun MainDashboardScreen(
         DashboardTab.Devices,
         DashboardTab.Mic,
         DashboardTab.Signals,
+        DashboardTab.Events,
         DashboardTab.Settings,
     )
 
@@ -129,6 +131,9 @@ fun MainDashboardScreen(
             }
             composable(DashboardTab.Signals.route) {
                 SignalsScreen()
+            }
+            composable(DashboardTab.Events.route) {
+                EventsScreen()
             }
             composable(DashboardTab.Settings.route) {
                 SettingsScreen()
