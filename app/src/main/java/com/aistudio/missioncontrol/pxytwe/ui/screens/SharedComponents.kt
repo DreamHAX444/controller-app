@@ -29,3 +29,47 @@ fun SkeletonLoader(modifier: Modifier = Modifier, shape: Shape = RoundedCornerSh
             .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha), shape)
     )
 }
+
+@Composable
+fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
+    val state by com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
+        .connectionState
+        .androidx.compose.runtime.collectAsState()
+    val (label, color) = when (state) {
+        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connected ->
+            "LIVE" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusLive
+        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connecting ->
+            "CONNECTING…" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusConnecting
+        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Reconnecting ->
+            "RECONNECTING…" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusReconnecting
+        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Disconnected ->
+            "OFFLINE" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusOffline
+        else -> "—" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusUnknown
+    }
+    androidx.compose.foundation.layout.Row(
+        modifier = modifier
+            .androidx.compose.foundation.layout.statusBarsPadding()
+            .androidx.compose.foundation.layout.padding(end = 24.dp, top = 16.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = androidx.compose.foundation.shape.CircleShape)
+            .androidx.compose.foundation.border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.foundation.shape.CircleShape)
+            .androidx.compose.foundation.layout.padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+    ) {
+        Box(
+            modifier = Modifier
+                .androidx.compose.foundation.layout.size(6.dp)
+                .androidx.compose.ui.draw.clip(androidx.compose.foundation.shape.CircleShape)
+                .background(color)
+        )
+        androidx.compose.foundation.layout.Spacer(androidx.compose.foundation.layout.Modifier.androidx.compose.foundation.layout.width(4.dp))
+        androidx.compose.material3.Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 9.sp,
+            letterSpacing = 1.sp,
+        )
+    }
+}

@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.getValue
 import com.aistudio.missioncontrol.pxytwe.ui.screens.PinLockScreen
 import com.aistudio.missioncontrol.pxytwe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -111,6 +113,15 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() }
                             )
                         }
+                    }
+                    
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route
+                    
+                    if (currentRoute != "pin_lock") {
+                        com.aistudio.missioncontrol.pxytwe.ui.screens.RealtimeStatusStrip(
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd)
+                        )
                     }
                 }
             }

@@ -85,35 +85,12 @@ fun DevicesScreen(
         ) {
             // Header Section
             Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "FLEET DIRECTORY",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = ColorTextSecondary,
-                        letterSpacing = 2.sp
-                    )
-                    
-                    // Live Status Indicator
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            "LIVE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                            letterSpacing = 1.sp
-                        )
-                    }
-                }
+                Text(
+                    "FLEET DIRECTORY",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ColorTextSecondary,
+                    letterSpacing = 2.sp
+                )
                 
                 Spacer(Modifier.height(4.dp))
                 

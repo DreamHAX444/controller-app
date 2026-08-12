@@ -140,10 +140,7 @@ fun MainDashboardScreen(
             }
         }
 
-        // Floating Realtime Status Strip
-        if (currentRoute != DashboardTab.Devices.route) {
-            RealtimeStatusStrip(modifier = Modifier.align(Alignment.TopEnd))
-        }
+        // Removed local RealtimeStatusStrip - it's now handled globally in MainActivity
 
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence.value
         androidx.compose.animation.AnimatedVisibility(
@@ -173,49 +170,6 @@ fun MainDashboardScreen(
     }
 }
 
-@Composable
-private fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
-    val state by com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
-        .connectionState
-        .collectAsState()
-    val (label, color) = when (state) {
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connected ->
-            "LIVE" to StatusLive
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connecting ->
-            "CONNECTING…" to StatusConnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Reconnecting ->
-            "RECONNECTING…" to StatusReconnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Disconnected ->
-            "OFFLINE" to StatusOffline
-        else -> "—" to StatusUnknown
-    }
-    Row(
-        modifier = modifier
-            .statusBarsPadding()
-            .padding(end = 24.dp, top = 16.dp)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = CircleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End,
-    ) {
-        Box(
-            modifier = androidx.compose.ui.Modifier
-                .size(6.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(color)
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.Bold,
-            fontSize = 9.sp,
-            letterSpacing = 1.sp,
-        )
-    }
-}
 
 @Composable
 fun PlaceholderScreen(title: String, subtitle: String) {
