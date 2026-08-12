@@ -115,16 +115,32 @@ object SupabaseClientManager {
         }
     }
 
+    // Lazily-initialized shared channel for commands — both sendCommand()
+    // and startListeningForPongs() use the same object so broadcast events
+    // are never lost to a stale/duplicate subscription.
+    private var commandsChannel: RealtimeChannel? = null
+
+    private suspend fun getOrCreateCommandsChannel(): RealtimeChannel {
+        val topic = "public:commands"
+        commandsChannel?.let { ch ->
+            if (ch.status.value == io.github.jan.supabase.realtime.RealtimeChannel.Status.SUBSCRIBED) return ch
+        }
+        // Remove any stale subscription with the same topic
+        client.realtime.subscriptions.values.find { it.topic == topic }?.let {
+            try { client.realtime.removeChannel(it) } catch (_: Exception) {}
+        }
+        val ch = client.realtime.channel(topic)
+        ch.subscribe(blockUntilSubscribed = true)
+        commandsChannel = ch
+        return ch
+    }
+
     suspend fun startListeningForPongs() {
         try {
-            val topic = "public:commands"
-            val existing = client.realtime.subscriptions.values.find { it.topic == topic }
-            val channel = existing ?: client.realtime.channel(topic)
-            if (channel.status.value != io.github.jan.supabase.realtime.RealtimeChannel.Status.SUBSCRIBED) {
-                channel.subscribe()
-            }
+            val channel = getOrCreateCommandsChannel()
             scope.launch {
                 channel.broadcastFlow<CommandPayload>(event = "pong").collect { pong ->
+                    Log.d("SupabaseClient", "Pong received from ${pong.device_id}")
                     _pingFlow.emit(pong.device_id)
                 }
             }
@@ -153,11 +169,6 @@ object SupabaseClientManager {
         URLEncoder.encode(raw, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
     // --- Per-device wake/sleep ---
-    //
-    // Send into the live `commands` queue (not `app_signals` — that table
-    // has no `device_id` column so a per-device insert would 400). The
-    // tracker side is responsible for subscribing to `commands` via
-    // realtime and acting on rows addressed to it.
 
     suspend fun sendWakeCommand(deviceId: String) {
         sendCommand(deviceId, "wake")
@@ -190,12 +201,7 @@ object SupabaseClientManager {
 
     suspend fun sendCommand(deviceId: String, command: String, params: String? = null) {
         try {
-            val topic = "public:commands"
-            val existing = client.realtime.subscriptions.values.find { it.topic == topic }
-            val channel = existing ?: client.realtime.channel(topic)
-            if (channel.status.value != io.github.jan.supabase.realtime.RealtimeChannel.Status.SUBSCRIBED) {
-                channel.subscribe(blockUntilSubscribed = true)
-            }
+            val channel = getOrCreateCommandsChannel()
             channel.broadcast(
                 event = "command",
                 message = CommandPayload(device_id = deviceId, command = command, params = params, status = "pending")

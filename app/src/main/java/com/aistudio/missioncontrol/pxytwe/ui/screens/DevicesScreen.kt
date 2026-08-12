@@ -67,11 +67,10 @@ fun DevicesScreen(
         }
     }
 
-    val devices by remember {
-        derivedStateOf {
-            activeMap.values.toList().sortedBy { it.name.lowercase() }
-        }
-    }
+    // Read the snapshot map directly — every put/remove triggers recomposition.
+    // derivedStateOf was suppressing updates here because the sorted list
+    // was structurally-equal across mutations that didn't change sort order.
+    val devices = activeMap.values.toList().sortedBy { it.name.lowercase() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },

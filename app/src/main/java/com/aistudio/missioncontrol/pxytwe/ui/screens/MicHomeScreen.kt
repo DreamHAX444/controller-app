@@ -63,13 +63,8 @@ fun MicHomeScreen(
     val vm = remember {
         AudioMonitorViewModel(context.applicationContext as android.app.Application)
     }
-    var recentDevices by remember { mutableStateOf<List<String>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        recentDevices = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices.keys.toList()
-        loading = false
-    }
+    // Read reactively from the snapshot map — no one-shot LaunchedEffect needed.
+    val recentDevices = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices.keys.toList()
 
     Column(
         modifier = Modifier
@@ -92,21 +87,6 @@ fun MicHomeScreen(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-        }
-
-        if (loading) {
-            // Ponytail: keep this branch so first paint doesn't show "no devices" for a frame.
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "Loading recent trackers…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            return@Column
         }
 
         if (recentDevices.isEmpty()) {
