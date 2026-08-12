@@ -140,8 +140,6 @@ fun MainDashboardScreen(
             }
         }
 
-        // Removed local RealtimeStatusStrip - it's now handled globally in MainActivity
-
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence.value
         androidx.compose.animation.AnimatedVisibility(
             visible = !isDrawingGeofence,
@@ -169,7 +167,6 @@ fun MainDashboardScreen(
         }
     }
 }
-
 
 @Composable
 fun PlaceholderScreen(title: String, subtitle: String) {

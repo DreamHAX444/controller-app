@@ -85,12 +85,19 @@ fun DevicesScreen(
         ) {
             // Header Section
             Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Text(
-                    "FLEET DIRECTORY",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ColorTextSecondary,
-                    letterSpacing = 2.sp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "FLEET DIRECTORY",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ColorTextSecondary,
+                        letterSpacing = 2.sp
+                    )
+
+                }
                 
                 Spacer(Modifier.height(4.dp))
                 

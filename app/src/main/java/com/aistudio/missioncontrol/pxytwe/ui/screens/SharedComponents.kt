@@ -62,7 +62,7 @@ fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
                 .androidx.compose.ui.draw.clip(androidx.compose.foundation.shape.CircleShape)
                 .background(color)
         )
-        androidx.compose.foundation.layout.Spacer(androidx.compose.foundation.layout.Modifier.androidx.compose.foundation.layout.width(4.dp))
+        androidx.compose.foundation.layout.Spacer(Modifier.androidx.compose.foundation.layout.width(4.dp))
         androidx.compose.material3.Text(
             label,
             style = MaterialTheme.typography.labelSmall,
@@ -73,3 +73,4 @@ fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
         )
     }
 }
+
