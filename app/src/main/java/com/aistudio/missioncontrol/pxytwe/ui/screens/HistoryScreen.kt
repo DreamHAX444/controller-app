@@ -48,7 +48,7 @@ fun HistoryScreen(micCallback: ((String) -> Unit)? = null) {
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .padding(horizontal = 24.dp),
-        contentPadding = PaddingValues(vertical = 16.dp, bottom = 120.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
