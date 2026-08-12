@@ -84,7 +84,7 @@ fun DevicesScreen(
                 .padding(innerPadding)
         ) {
             // Header Section
-            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -92,10 +92,9 @@ fun DevicesScreen(
                 ) {
                     Text(
                         "FLEET DIRECTORY",
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelSmall,
                         color = ColorTextSecondary,
-                        letterSpacing = 2.sp,
-                        fontWeight = FontWeight.SemiBold
+                        letterSpacing = 2.sp
                     )
                     
                     // Live Status Pill
@@ -126,15 +125,14 @@ fun DevicesScreen(
                     }
                 }
                 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 
                 Text(
                     if (devices.isEmpty()) "0 ACTIVE DEVICES"
                     else "${devices.size} ACTIVE DEVICE${if (devices.size == 1) "" else "S"}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = ColorTextPrimary,
-                    letterSpacing = (-0.5).sp
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ColorTextPrimary
                 )
             }
 
