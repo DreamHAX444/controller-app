@@ -69,7 +69,7 @@ fun DevicesScreen(
 
     val devices by remember {
         derivedStateOf {
-            activeMap.values.toList().sortedByDescending { it.lastSeen }
+            activeMap.values.toList().sortedBy { it.name.lowercase() }
         }
     }
 

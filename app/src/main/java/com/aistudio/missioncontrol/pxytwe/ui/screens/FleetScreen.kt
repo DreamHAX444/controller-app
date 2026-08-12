@@ -254,28 +254,35 @@ fun FleetScreen(
         }
 
         fun frameMapSelection(targetDevice: String) {
-            if (targetDevice == "All Devices") {
-                if (devicesList.isEmpty()) {
-                    mapView.controller.animateTo(startPoint)
-                    mapView.controller.setZoom(15.0)
-                } else if (devicesList.size == 1) {
-                    mapView.controller.animateTo(devicesList.first().point)
-                    mapView.controller.setZoom(17.0)
-                } else {
-                    val points = devicesList.map { it.point }
-                    val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(points)
-                    if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
-                        mapView.controller.animateTo(points.first())
-                        mapView.controller.setZoom(17.0)
+            mapView.post {
+                if (targetDevice == "All Devices") {
+                    if (devicesList.isEmpty()) {
+                        mapView.controller.animateTo(startPoint, 15.0, 1000L)
+                    } else if (devicesList.size == 1) {
+                        mapView.controller.animateTo(devicesList.first().point, 17.0, 1000L)
                     } else {
-                        mapView.zoomToBoundingBox(boundingBox, true, 150)
+                        val points = devicesList.map { it.point }
+                        val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(points)
+                        if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
+                            mapView.controller.animateTo(points.first(), 17.0, 1000L)
+                        } else {
+                            val latDiff = boundingBox.latNorth - boundingBox.latSouth
+                            val lonDiff = boundingBox.lonEast - boundingBox.lonWest
+                            val paddingFactor = 0.2
+                            val paddedBox = org.osmdroid.util.BoundingBox(
+                                boundingBox.latNorth + latDiff * paddingFactor,
+                                boundingBox.lonEast + lonDiff * paddingFactor,
+                                boundingBox.latSouth - latDiff * paddingFactor,
+                                boundingBox.lonWest - lonDiff * paddingFactor
+                            )
+                            mapView.zoomToBoundingBox(paddedBox, true, 100)
+                        }
                     }
-                }
-            } else {
-                val device = devicesList.find { it.name == targetDevice }
-                if (device != null) {
-                    mapView.controller.animateTo(device.point)
-                    mapView.controller.setZoom(17.0)
+                } else {
+                    val device = devicesList.find { it.name == targetDevice }
+                    if (device != null) {
+                        mapView.controller.animateTo(device.point, 17.0, 1000L)
+                    }
                 }
             }
         }
@@ -754,19 +761,46 @@ fun FleetScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                            ) {
-                                Text(
-                                    text = if (currentGeofencePoints.size < 3) "TAP MAP (MIN 3)" else "${currentGeofencePoints.size} PTS",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 1.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (currentGeofencePoints.size >= 3) {
+                                    val currentAreaSqM = remember(currentGeofencePoints.size) {
+                                        GeofenceUtils.calculateArea(currentGeofencePoints.toList())
+                                    }
+                                    val formattedArea = if (currentAreaSqM > 1000000) {
+                                        String.format(java.util.Locale.US, "%.2f sq km", currentAreaSqM / 1000000)
+                                    } else {
+                                        String.format(java.util.Locale.US, "%.0f sq m", currentAreaSqM)
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                                    ) {
+                                        Text(
+                                            text = formattedArea,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = if (currentGeofencePoints.size < 3) "TAP MAP (MIN 3)" else "${currentGeofencePoints.size} PTS",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 1.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
 

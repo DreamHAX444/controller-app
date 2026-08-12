@@ -2,14 +2,23 @@ package com.aistudio.missioncontrol.pxytwe.ui.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 
 @Composable
 fun SkeletonLoader(modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(4.dp)) {
@@ -32,42 +41,40 @@ fun SkeletonLoader(modifier: Modifier = Modifier, shape: Shape = RoundedCornerSh
 
 @Composable
 fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
-    val state by com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
-        .connectionState
-        .androidx.compose.runtime.collectAsState()
+    val state by SupabaseClientManager.connectionState.collectAsState()
     val (label, color) = when (state) {
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connected ->
+        SupabaseClientManager.ConnectionState.Connected ->
             "LIVE" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusLive
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connecting ->
+        SupabaseClientManager.ConnectionState.Connecting ->
             "CONNECTING…" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusConnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Reconnecting ->
+        SupabaseClientManager.ConnectionState.Reconnecting ->
             "RECONNECTING…" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusReconnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Disconnected ->
+        SupabaseClientManager.ConnectionState.Disconnected ->
             "OFFLINE" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusOffline
         else -> "—" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusUnknown
     }
-    androidx.compose.foundation.layout.Row(
+    Row(
         modifier = modifier
-            .androidx.compose.foundation.layout.statusBarsPadding()
-            .androidx.compose.foundation.layout.padding(end = 24.dp, top = 16.dp)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = androidx.compose.foundation.shape.CircleShape)
-            .androidx.compose.foundation.border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.foundation.shape.CircleShape)
-            .androidx.compose.foundation.layout.padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End,
+            .statusBarsPadding()
+            .padding(end = 24.dp, top = 16.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), shape = CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
     ) {
         Box(
             modifier = Modifier
-                .androidx.compose.foundation.layout.size(6.dp)
-                .androidx.compose.ui.draw.clip(androidx.compose.foundation.shape.CircleShape)
+                .size(6.dp)
+                .clip(CircleShape)
                 .background(color)
         )
-        androidx.compose.foundation.layout.Spacer(androidx.compose.foundation.layout.Modifier.androidx.compose.foundation.layout.width(4.dp))
-        androidx.compose.material3.Text(
+        Spacer(Modifier.width(4.dp))
+        Text(
             label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontWeight = FontWeight.Bold,
             fontSize = 9.sp,
             letterSpacing = 1.sp,
         )

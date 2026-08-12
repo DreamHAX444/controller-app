@@ -48,6 +48,31 @@ object GeofenceUtils {
         return GeoPoint(sumLat / points.size, sumLon / points.size)
     }
 
+    /**
+     * Calculates the area of a polygon on the Earth's surface in square meters.
+     * Uses the spherical polygon area formula based on spherical excess.
+     */
+    fun calculateArea(points: List<GeoPoint>): Double {
+        if (points.size < 3) return 0.0
+        var area = 0.0
+        val radius = 6378137.0 // Earth radius in meters
+
+        for (i in points.indices) {
+            val p1 = points[i]
+            val p2 = points[(i + 1) % points.size]
+            
+            val lon1 = Math.toRadians(p1.longitude)
+            val lat1 = Math.toRadians(p1.latitude)
+            val lon2 = Math.toRadians(p2.longitude)
+            val lat2 = Math.toRadians(p2.latitude)
+
+            area += (lon2 - lon1) * (2.0 + Math.sin(lat1) + Math.sin(lat2))
+        }
+        
+        area = area * radius * radius / 2.0
+        return Math.abs(area)
+    }
+
     fun serializeGeofences(geofences: List<GeofenceData>): String {
         return geofences.joinToString(separator = ";") { fence ->
             val pointsStr = fence.points.joinToString(separator = "|") { point ->
