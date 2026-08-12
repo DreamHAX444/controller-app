@@ -1,5 +1,6 @@
 package com.aistudio.missioncontrol.pxytwe.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
+private val ColorCard @Composable get() = MaterialTheme.colorScheme.surface
+private val ColorTextPrimary @Composable get() = MaterialTheme.colorScheme.onSurface
+private val ColorTextSecondary @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorBorder @Composable get() = MaterialTheme.colorScheme.outline
+private val ColorIcon @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorPrimary @Composable get() = MaterialTheme.colorScheme.primary
+
 @Composable
 fun HistoryScreen(micCallback: ((String) -> Unit)? = null) {
     val activeDevices = AppState.activeDevices
@@ -37,68 +46,77 @@ fun HistoryScreen(micCallback: ((String) -> Unit)? = null) {
     val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val dateFmt = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
 
-    if (devices.isEmpty()) {
-        EmptyHistory()
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .padding(horizontal = 24.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Column(modifier = Modifier.padding(bottom = 16.dp)) {
+    Scaffold(
+        containerColor = ColorBackground,
+        modifier = Modifier.fillMaxSize().statusBarsPadding()
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
                 Text(
                     "DEVICE ACTIVITY",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ColorTextSecondary,
                     letterSpacing = 2.sp
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Recent locations · ${devices.size} device${if (devices.size == 1) "" else "s"}",
+                    "Recent Locations",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                    fontWeight = FontWeight.SemiBold,
+                    color = ColorTextPrimary
                 )
             }
-        }
 
-        if (activeSession != null) {
-            item {
-                ActiveSessionChip(monitorStatus.name, activeSession!!)
+            if (devices.isEmpty()) {
+                EmptyHistory()
+                return@Column
             }
-        }
 
-        items(devices, key = { it.name }) { dev ->
-            HistoryRow(dev, timeFmt, dateFmt, onMicClick = micCallback?.let { cb -> { cb(dev.name) } })
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(bottom = 100.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (activeSession != null) {
+                    item {
+                        ActiveSessionChip(monitorStatus.name, activeSession!!)
+                    }
+                }
+
+                items(devices, key = { it.name }) { dev ->
+                    HistoryRow(dev, timeFmt, dateFmt, onMicClick = micCallback?.let { cb -> { cb(dev.name) } })
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun ActiveSessionChip(status: String, sessionId: String) {
-    Surface(
+    Card(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 Icons.Default.Schedule,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(24.dp)
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(16.dp))
             Column {
                 Text(
                     "MIC SESSION · $status",
@@ -110,7 +128,7 @@ private fun ActiveSessionChip(status: String, sessionId: String) {
                 Text(
                     sessionId.take(13) + "…",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ColorTextSecondary,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                 )
             }
@@ -128,10 +146,12 @@ private fun HistoryRow(dev: DeviceTelemetry, timeFmt: SimpleDateFormat, dateFmt:
         else -> "${diff / 3_600_000}h ago"
     }
 
-    Surface(
+    Card(
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        colors = CardDefaults.cardColors(containerColor = ColorCard),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, ColorBorder)
     ) {
         Row(
             modifier = Modifier
@@ -141,38 +161,38 @@ private fun HistoryRow(dev: DeviceTelemetry, timeFmt: SimpleDateFormat, dateFmt:
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(48.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)),
+                    .background(ColorBorder),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.LocationOn,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.size(20.dp)
+                    tint = ColorTextPrimary,
+                    modifier = Modifier.size(22.dp)
                 )
             }
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     dev.name.uppercase(),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = ColorTextPrimary,
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 1
                 )
                 Text(
                     "${"%.4f".format(dev.lat)}, ${"%.4f".format(dev.lon)}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ColorTextSecondary,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                 )
                 Text(
                     "$lastSeenText · ${dev.history.size} pts",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = ColorTextSecondary.copy(alpha = 0.7f)
                 )
             }
             Surface(
@@ -182,19 +202,26 @@ private fun HistoryRow(dev: DeviceTelemetry, timeFmt: SimpleDateFormat, dateFmt:
                 Text(
                     "${dev.battery}%",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ColorTextSecondary,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
             if (onMicClick != null) {
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onMicClick) {
-                    Icon(
-                        Icons.Filled.GraphicEq,
-                        contentDescription = "Listen to ${dev.name}",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                Spacer(Modifier.width(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(percent = 50),
+                    color = ColorCard,
+                    border = BorderStroke(1.dp, ColorBorder)
+                ) {
+                    IconButton(onClick = onMicClick, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Filled.GraphicEq,
+                            contentDescription = "Listen to ${dev.name}",
+                            tint = ColorIcon,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -203,33 +230,47 @@ private fun HistoryRow(dev: DeviceTelemetry, timeFmt: SimpleDateFormat, dateFmt:
 
 @Composable
 private fun EmptyHistory() {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Default.History,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "NO TELEMETRY YET",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Tracker locations will appear here as soon as the Live Tracker sends them.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = ColorCard),
+            border = BorderStroke(1.dp, ColorBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = null,
+                    tint = ColorIcon,
+                    modifier = Modifier.size(48.dp),
+                )
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "NO TELEMETRY YET",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = ColorTextPrimary,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Tracker locations will appear here as soon as the Live Tracker sends them.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ColorTextSecondary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
     }
 }

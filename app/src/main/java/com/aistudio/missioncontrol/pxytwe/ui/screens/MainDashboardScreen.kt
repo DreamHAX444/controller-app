@@ -136,7 +136,12 @@ fun MainDashboardScreen(
                 EventsScreen()
             }
             composable(DashboardTab.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onNavigateToSiren = { navController.navigate("siren_settings") }
+                )
+            }
+            composable("siren_settings") { 
+                SirenSettingsScreen(onBack = { navController.popBackStack() }) 
             }
         }
 

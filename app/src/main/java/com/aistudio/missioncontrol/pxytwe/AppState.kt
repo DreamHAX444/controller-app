@@ -34,14 +34,27 @@ object AppState {
 
     val deviceCurrentZones = androidx.compose.runtime.mutableStateMapOf<String, String>()
 
+    // Siren Preferences
+    val isSirenEnabled = mutableStateOf(true)
+    val sirenType = mutableStateOf("ALARM")
+    val sirenDuration = mutableStateOf(3000L)
+
     private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
     private var isInitialized = false
     private var sharedPrefs: android.content.SharedPreferences? = null
+    private var appContext: android.content.Context? = null
 
     fun initialize(context: android.content.Context) {
         if (isInitialized) return
         isInitialized = true
+        appContext = context.applicationContext
         sharedPrefs = context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE)
+        
+        // Load Siren Preferences
+        isSirenEnabled.value = sharedPrefs?.getBoolean("siren_enabled", true) ?: true
+        sirenType.value = sharedPrefs?.getString("siren_type", "ALARM") ?: "ALARM"
+        sirenDuration.value = sharedPrefs?.getLong("siren_duration", 3000L) ?: 3000L
+        
         EventLogger.initialize(context)
 
         appScope.launch {
@@ -105,6 +118,7 @@ object AppState {
                         }
                         if (currentZone != null) {
                             EventLogger.logEvent(loc.device_id, "GEOFENCE_ENTER", "Entered $currentZone")
+                            playSiren()
                         }
                         if (currentZone == null) {
                             deviceCurrentZones.remove(loc.device_id)
@@ -127,6 +141,53 @@ object AppState {
             sdf.parse(cleanDate)?.time ?: System.currentTimeMillis()
         } catch (e: Exception) {
             System.currentTimeMillis()
+        }
+    }
+
+    fun saveSirenPrefs(enabled: Boolean, type: String, duration: Long) {
+        isSirenEnabled.value = enabled
+        sirenType.value = type
+        sirenDuration.value = duration
+        sharedPrefs?.edit()?.apply {
+            putBoolean("siren_enabled", enabled)
+            putString("siren_type", type)
+            putLong("siren_duration", duration)
+            apply()
+        }
+    }
+
+    fun previewSiren() {
+        playSirenInternal()
+    }
+
+    private fun playSiren() {
+        if (!isSirenEnabled.value) return
+        playSirenInternal()
+    }
+
+    private fun playSirenInternal() {
+        appContext?.let { ctx ->
+            try {
+                val uri = if (sirenType.value == "ALARM") {
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+                        ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+                } else {
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+                }
+                
+                val ringtone = android.media.RingtoneManager.getRingtone(ctx, uri)
+                ringtone?.play()
+                
+                // Stop after configured duration to avoid infinite alarm ringing
+                appScope.launch {
+                    kotlinx.coroutines.delay(sirenDuration.value)
+                    if (ringtone?.isPlaying == true) {
+                        ringtone.stop()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }
