@@ -297,6 +297,70 @@ fun FleetScreen(
                     overlays.add(drawingOverlay)
                     overlays.add(devicesOverlay)
                     
+                    // Advanced dragging overlay: instant response, prevents map pan
+                    val interactionOverlay = object : org.osmdroid.views.overlay.Overlay() {
+                        var draggedIndex = -1
+                        
+                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: org.osmdroid.views.MapView): Boolean {
+                            if (!isDrawingGeofence.value) return super.onTouchEvent(event, mapView)
+                            
+                            val proj = mapView.projection
+                            val tGeo = proj.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
+                            
+                            when (event.action) {
+                                android.view.MotionEvent.ACTION_DOWN -> {
+                                    var closestIndex = -1
+                                    var minDistance = Float.MAX_VALUE
+                                    val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                    for (i in markers.indices) {
+                                        val p = proj.toPixels(markers[i].position, null)
+                                        val dx = event.x - p.x
+                                        val dy = event.y - p.y
+                                        val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                                        if (dist < 100f && dist < minDistance) { // Generous hit radius
+                                            minDistance = dist
+                                            closestIndex = i
+                                        }
+                                    }
+                                    if (closestIndex != -1) {
+                                        draggedIndex = closestIndex
+                                        mapView.parent?.requestDisallowInterceptTouchEvent(true)
+                                        return true // Consume touch, blocks map from panning
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_MOVE -> {
+                                    if (draggedIndex != -1) {
+                                        // Live update shape and marker visually without triggering Compose
+                                        val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                        if (draggedIndex < markers.size) {
+                                            markers[draggedIndex].position = tGeo
+                                            val newPoints = markers.map { it.position }
+                                            drawingOverlay.items.filterIsInstance<Polygon>().firstOrNull()?.points = newPoints
+                                            drawingOverlay.items.filterIsInstance<Polyline>().firstOrNull()?.setPoints(newPoints)
+                                            mapView.invalidate()
+                                        }
+                                        return true
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                                    if (draggedIndex != -1) {
+                                        val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                        if (draggedIndex < markers.size) {
+                                            val newPos = markers[draggedIndex].position
+                                            // This will trigger a recomposition and update our geofencePointsList
+                                            currentGeofencePoints[draggedIndex] = GeoPoint(newPos.latitude, newPos.longitude)
+                                        }
+                                        draggedIndex = -1
+                                        mapView.parent?.requestDisallowInterceptTouchEvent(false)
+                                        return true
+                                    }
+                                }
+                            }
+                            return super.onTouchEvent(event, mapView)
+                        }
+                    }
+                    overlays.add(interactionOverlay)
+                    
                     val mapEventsReceiver = object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             if (p == null) return false
@@ -332,159 +396,107 @@ fun FleetScreen(
                 }
             },
             update = { view ->
-                // Update Saved Fences
-                savedFencesOverlay.items.clear()
-                savedFencesList.forEach { fenceData ->
-                    val polygon = Polygon()
-                    polygon.points = fenceData.points
-                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
-                    polygon.outlinePaint.color = fenceData.colorArgb
-                    polygon.outlinePaint.strokeWidth = 6f
-                    polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(30f, 15f), 0f)
-                    polygon.outlinePaint.setShadowLayer(15f, 0f, 0f, fenceData.colorArgb)
-                    savedFencesOverlay.add(polygon)
-
-                    if (!isDrawingGeofence.value) {
-                        val centroid = GeofenceUtils.getCentroid(fenceData.points)
-                        val labelMarker = Marker(view)
-                        labelMarker.position = centroid
-                        labelMarker.title = fenceData.name
-                        labelMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        labelMarker.icon = geofenceLabelBitmaps[fenceData.name]?.toDrawable(resources)
-                        labelMarker.setOnMarkerClickListener { _, _ ->
-                            // Editing logic happens on long press of the polygon
-                            true
-                        }
-                        savedFencesOverlay.add(labelMarker)
-                    }
-                }
-
-                // Update History Overlay
-                historyOverlay.items.clear()
-                activeMap.values.forEach { dev ->
-                    if (selectedDevice == "All Devices" || selectedDevice == dev.name) {
-                        if (dev.history.size >= 2) {
-                            val polyline = Polyline()
-                            polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
-                            polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
-                            polyline.outlinePaint.strokeWidth = 4f
-                            historyOverlay.add(polyline)
-                        }
-                    }
-                }
-
-                // Update Drawing Overlay
-                drawingOverlay.items.clear()
-                val activeColor = currentGeofenceColor.intValue
-                if (geofencePointsList.isNotEmpty()) {
-                    val drawingShape: org.osmdroid.views.overlay.OverlayWithIW? = if (geofencePointsList.size >= 3) {
-                        val polygon = Polygon()
-                        polygon.points = geofencePointsList
-                        polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
-                        polygon.outlinePaint.color = activeColor
-                        polygon.outlinePaint.strokeWidth = 6f
-                        drawingOverlay.add(polygon)
-                        polygon
-                    } else if (geofencePointsList.size == 2) {
-                        val polyline = Polyline()
-                        polyline.setPoints(geofencePointsList)
-                        polyline.outlinePaint.color = activeColor
-                        polyline.outlinePaint.strokeWidth = 6f
-                        drawingOverlay.add(polyline)
-                        polyline
-                    } else null
-
-                    val markers = ArrayList<Marker>()
-                    geofencePointsList.forEachIndexed { index, pt ->
-                        val marker = Marker(view)
-                        marker.position = pt
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.icon = drawingPointBitmap.toDrawable(resources)
-                        marker.isDraggable = false // We use our custom interaction overlay
-                        drawingOverlay.add(marker)
-                        markers.add(marker)
-                    }
-
-                    // Advanced dragging overlay: instant response, prevents map pan
-                    val interactionOverlay = object : org.osmdroid.views.overlay.Overlay() {
-                        var draggedIndex = -1
-                        
-                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: org.osmdroid.views.MapView): Boolean {
-                            if (!isDrawingGeofence.value) return super.onTouchEvent(event, mapView)
-                            
-                            val proj = mapView.projection
-                            val tGeo = proj.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
-                            
-                            when (event.action) {
-                                android.view.MotionEvent.ACTION_DOWN -> {
-                                    var closestIndex = -1
-                                    var minDistance = Float.MAX_VALUE
-                                    for (i in markers.indices) {
-                                        val p = proj.toPixels(markers[i].position, null)
-                                        val dx = event.x - p.x
-                                        val dy = event.y - p.y
-                                        val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-                                        if (dist < 100f && dist < minDistance) { // Generous hit radius
-                                            minDistance = dist
-                                            closestIndex = i
-                                        }
-                                    }
-                                    if (closestIndex != -1) {
-                                        draggedIndex = closestIndex
-                                        mapView.parent?.requestDisallowInterceptTouchEvent(true)
-                                        return true // Consume touch, blocks map from panning
-                                    }
-                                }
-                                android.view.MotionEvent.ACTION_MOVE -> {
-                                    if (draggedIndex != -1) {
-                                        // Live update shape and marker
-                                        markers[draggedIndex].position = tGeo
-                                        val newPoints = markers.map { it.position }
-                                        if (drawingShape is Polygon) {
-                                            drawingShape.points = newPoints
-                                        } else if (drawingShape is Polyline) {
-                                            drawingShape.setPoints(newPoints)
-                                        }
-                                        mapView.invalidate()
-                                        return true
-                                    }
-                                }
-                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                                    if (draggedIndex != -1) {
-                                        currentGeofencePoints[draggedIndex] = GeoPoint(markers[draggedIndex].position.latitude, markers[draggedIndex].position.longitude)
-                                        draggedIndex = -1
-                                        return true
-                                    }
-                                }
-                            }
-                            return super.onTouchEvent(event, mapView)
-                        }
-                    }
-                    drawingOverlay.add(interactionOverlay)
-                }
-
-                // Update Devices Overlay
-                devicesOverlay.items.clear()
-                devicesList.forEach { device ->
-                    if (selectedDevice == "All Devices" || selectedDevice == device.name) {
-                        val marker = Marker(view)
-                        marker.position = device.point
-                        marker.title = device.name
-                        marker.icon = deviceBitmaps[device.name]?.toDrawable(resources)
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.rotation = -device.heading
-                        marker.setOnMarkerClickListener { _, _ ->
-                            updateSelectedDevice(device.name)
-                            view.controller.animateTo(device.point)
-                            true
-                        }
-                        devicesOverlay.add(marker)
-                    }
-                }
-                view.invalidate()
+                // Empty update block to prevent Compose recompositions from tearing down the overlays during interactions.
+                // Overlays are managed by LaunchedEffects below.
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Sync Saved Fences
+        LaunchedEffect(savedFencesList, isDrawingGeofence.value) {
+            savedFencesOverlay.items.clear()
+            savedFencesList.forEach { fenceData ->
+                val polygon = Polygon()
+                polygon.points = fenceData.points
+                polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
+                polygon.outlinePaint.color = fenceData.colorArgb
+                polygon.outlinePaint.strokeWidth = 6f
+                polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(30f, 15f), 0f)
+                polygon.outlinePaint.setShadowLayer(15f, 0f, 0f, fenceData.colorArgb)
+                savedFencesOverlay.add(polygon)
+
+                if (!isDrawingGeofence.value) {
+                    val centroid = GeofenceUtils.getCentroid(fenceData.points)
+                    val labelMarker = Marker(mapView)
+                    labelMarker.position = centroid
+                    labelMarker.title = fenceData.name
+                    labelMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    labelMarker.icon = geofenceLabelBitmaps[fenceData.name]?.toDrawable(resources)
+                    labelMarker.setOnMarkerClickListener { _, _ -> true }
+                    savedFencesOverlay.add(labelMarker)
+                }
+            }
+            mapView.invalidate()
+        }
+
+        // Sync Devices and History
+        LaunchedEffect(devicesList, selectedDevice) {
+            historyOverlay.items.clear()
+            devicesOverlay.items.clear()
+            
+            val activeDevices = activeMap.values.toList()
+            activeDevices.forEach { dev ->
+                if (selectedDevice == "All Devices" || selectedDevice == dev.name) {
+                    if (dev.history.size >= 2) {
+                        val polyline = Polyline()
+                        polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
+                        polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
+                        polyline.outlinePaint.strokeWidth = 4f
+                        historyOverlay.add(polyline)
+                    }
+                }
+            }
+
+            devicesList.forEach { device ->
+                if (selectedDevice == "All Devices" || selectedDevice == device.name) {
+                    val marker = Marker(mapView)
+                    marker.position = device.point
+                    marker.title = device.name
+                    marker.icon = deviceBitmaps[device.name]?.toDrawable(resources)
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    marker.rotation = -device.heading
+                    marker.setOnMarkerClickListener { _, _ ->
+                        updateSelectedDevice(device.name)
+                        mapView.controller.animateTo(device.point)
+                        true
+                    }
+                    devicesOverlay.add(marker)
+                }
+            }
+            mapView.invalidate()
+        }
+
+        // Sync Drawing Geofence
+        LaunchedEffect(geofencePointsList, currentGeofenceColor.intValue, isDrawingGeofence.value) {
+            drawingOverlay.items.clear()
+            if (isDrawingGeofence.value && geofencePointsList.isNotEmpty()) {
+                val activeColor = currentGeofenceColor.intValue
+                if (geofencePointsList.size >= 3) {
+                    val polygon = Polygon()
+                    polygon.points = geofencePointsList
+                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
+                    polygon.outlinePaint.color = activeColor
+                    polygon.outlinePaint.strokeWidth = 6f
+                    drawingOverlay.add(polygon)
+                } else if (geofencePointsList.size == 2) {
+                    val polyline = Polyline()
+                    polyline.setPoints(geofencePointsList)
+                    polyline.outlinePaint.color = activeColor
+                    polyline.outlinePaint.strokeWidth = 6f
+                    drawingOverlay.add(polyline)
+                }
+
+                geofencePointsList.forEach { pt ->
+                    val marker = Marker(mapView)
+                    marker.position = pt
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    marker.icon = drawingPointBitmap.toDrawable(resources)
+                    marker.isDraggable = false
+                    drawingOverlay.add(marker)
+                }
+            }
+            mapView.invalidate()
+        }
         
         Box(
             modifier = Modifier
