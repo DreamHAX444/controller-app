@@ -206,19 +206,52 @@ fun FleetScreen(
             bitmap
         }
 
-        // Cache for label dot bitmap
-        val labelDotBitmap = remember {
-            val bitmap = createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
+        // Cache for label text bitmaps
+        val createTextBitmap: (String, Int) -> android.graphics.Bitmap = { text, color ->
             val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            paint.color = android.graphics.Color.WHITE
-            paint.alpha = 150
-            canvas.drawCircle(5f, 5f, 5f, paint)
+            paint.textSize = 32f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            paint.color = color
+            
+            val textBounds = android.graphics.Rect()
+            paint.getTextBounds(text, 0, text.length, textBounds)
+            
+            val paddingX = 24
+            val paddingY = 16
+            val width = textBounds.width() + paddingX * 2
+            val height = textBounds.height() + paddingY * 2
+            
+            val bitmap = createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            
+            // Draw background pill
+            val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            bgPaint.color = android.graphics.Color.argb(220, 25, 25, 25)
+            val rect = android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+            canvas.drawRoundRect(rect, height / 2f, height / 2f, bgPaint)
+            
+            // Draw border
+            val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            borderPaint.style = android.graphics.Paint.Style.STROKE
+            borderPaint.strokeWidth = 4f
+            borderPaint.color = color
+            canvas.drawRoundRect(rect, height / 2f, height / 2f, borderPaint)
+            
+            // Draw text
+            canvas.drawText(text, paddingX.toFloat() - textBounds.left, paddingY.toFloat() - textBounds.top, paint)
+            
             bitmap
         }
-
         val geofencePointsList = currentGeofencePoints.toList()
         val savedFencesList = savedGeofences.toList()
+
+        val geofenceLabelBitmaps = remember(savedFencesList) {
+            val cache = mutableMapOf<String, android.graphics.Bitmap>()
+            savedFencesList.forEach { fence ->
+                cache[fence.name] = createTextBitmap(fence.name, fence.colorArgb)
+            }
+            cache
+        }
 
         fun frameMapSelection(targetDevice: String) {
             if (targetDevice == "All Devices") {
@@ -306,8 +339,9 @@ fun FleetScreen(
                     polygon.points = fenceData.points
                     polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
                     polygon.outlinePaint.color = fenceData.colorArgb
-                    polygon.outlinePaint.strokeWidth = 5f
-                    polygon.outlinePaint.setShadowLayer(10f, 0f, 0f, fenceData.colorArgb)
+                    polygon.outlinePaint.strokeWidth = 6f
+                    polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(30f, 15f), 0f)
+                    polygon.outlinePaint.setShadowLayer(15f, 0f, 0f, fenceData.colorArgb)
                     savedFencesOverlay.add(polygon)
 
                     if (!isDrawingGeofence.value) {
@@ -316,9 +350,9 @@ fun FleetScreen(
                         labelMarker.position = centroid
                         labelMarker.title = fenceData.name
                         labelMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        labelMarker.icon = labelDotBitmap.toDrawable(resources)
-                        labelMarker.setOnMarkerClickListener { m, _ ->
-                            m.showInfoWindow()
+                        labelMarker.icon = geofenceLabelBitmaps[fenceData.name]?.toDrawable(resources)
+                        labelMarker.setOnMarkerClickListener { _, _ ->
+                            // Editing logic happens on long press of the polygon
                             true
                         }
                         savedFencesOverlay.add(labelMarker)
@@ -343,36 +377,90 @@ fun FleetScreen(
                 drawingOverlay.items.clear()
                 val activeColor = currentGeofenceColor.intValue
                 if (geofencePointsList.isNotEmpty()) {
-                    geofencePointsList.forEachIndexed { index, pt ->
-                        val marker = Marker(view)
-                        marker.position = pt
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.icon = drawingPointBitmap.toDrawable(resources)
-                        marker.isDraggable = true
-                        marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                            override fun onMarkerDragStart(marker: Marker) {}
-                            override fun onMarkerDrag(marker: Marker) {}
-                            override fun onMarkerDragEnd(marker: Marker) {
-                                currentGeofencePoints[index] = marker.position
-                            }
-                        })
-                        drawingOverlay.add(marker)
-                    }
-
-                    if (geofencePointsList.size >= 3) {
+                    val drawingShape: org.osmdroid.views.overlay.OverlayWithIW? = if (geofencePointsList.size >= 3) {
                         val polygon = Polygon()
                         polygon.points = geofencePointsList
                         polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
                         polygon.outlinePaint.color = activeColor
                         polygon.outlinePaint.strokeWidth = 6f
                         drawingOverlay.add(polygon)
+                        polygon
                     } else if (geofencePointsList.size == 2) {
                         val polyline = Polyline()
                         polyline.setPoints(geofencePointsList)
                         polyline.outlinePaint.color = activeColor
                         polyline.outlinePaint.strokeWidth = 6f
                         drawingOverlay.add(polyline)
+                        polyline
+                    } else null
+
+                    val markers = ArrayList<Marker>()
+                    geofencePointsList.forEachIndexed { index, pt ->
+                        val marker = Marker(view)
+                        marker.position = pt
+                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        marker.icon = drawingPointBitmap.toDrawable(resources)
+                        marker.isDraggable = false // We use our custom interaction overlay
+                        drawingOverlay.add(marker)
+                        markers.add(marker)
                     }
+
+                    // Advanced dragging overlay: instant response, prevents map pan
+                    val interactionOverlay = object : org.osmdroid.views.overlay.Overlay() {
+                        var draggedIndex = -1
+                        
+                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: org.osmdroid.views.MapView): Boolean {
+                            if (!isDrawingGeofence.value) return super.onTouchEvent(event, mapView)
+                            
+                            val proj = mapView.projection
+                            val tGeo = proj.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
+                            
+                            when (event.action) {
+                                android.view.MotionEvent.ACTION_DOWN -> {
+                                    var closestIndex = -1
+                                    var minDistance = Float.MAX_VALUE
+                                    for (i in markers.indices) {
+                                        val p = proj.toPixels(markers[i].position, null)
+                                        val dx = event.x - p.x
+                                        val dy = event.y - p.y
+                                        val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                                        if (dist < 100f && dist < minDistance) { // Generous hit radius
+                                            minDistance = dist
+                                            closestIndex = i
+                                        }
+                                    }
+                                    if (closestIndex != -1) {
+                                        draggedIndex = closestIndex
+                                        mapView.parent?.requestDisallowInterceptTouchEvent(true)
+                                        return true // Consume touch, blocks map from panning
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_MOVE -> {
+                                    if (draggedIndex != -1) {
+                                        // Live update shape and marker
+                                        markers[draggedIndex].position = tGeo
+                                        val newPoints = markers.map { it.position }
+                                        if (drawingShape is Polygon) {
+                                            drawingShape.points = newPoints
+                                        } else if (drawingShape is Polyline) {
+                                            drawingShape.setPoints(newPoints)
+                                        }
+                                        mapView.invalidate()
+                                        return true
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                                    if (draggedIndex != -1) {
+                                        currentGeofencePoints[draggedIndex] = GeoPoint(markers[draggedIndex].position.latitude, markers[draggedIndex].position.longitude)
+                                        draggedIndex = -1
+                                        return true
+                                    }
+                                }
+                            }
+                            return super.onTouchEvent(event, mapView)
+                        }
+                    }
+                    drawingOverlay.add(interactionOverlay)
                 }
 
                 // Update Devices Overlay
@@ -973,9 +1061,16 @@ fun FleetScreen(
                         val speedText = currentTelemetry?.let { String.format(java.util.Locale.US, "%.1f km/h", it.speed) } ?: "N/A"
                         val batteryText = currentTelemetry?.let { "${it.battery}%" + if (it.charging) " (AC)" else "" } ?: "N/A"
                         val signalText = currentTelemetry?.let { "${it.signal} dBm" } ?: "N/A"
+                        val currentZoneText = currentTelemetry?.let { telemetry ->
+                            val pt = GeoPoint(telemetry.lat, telemetry.lon)
+                            val zone = savedFencesList.find { GeofenceUtils.isPointInPolygon(pt, it.points) }
+                            zone?.name?.uppercase() ?: "NONE"
+                        } ?: "UNKNOWN"
+                        
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             HUDDataBlock("SPEED", speedText, modifier = Modifier.weight(1f))
                             HUDDataBlock("BATTERY", batteryText, modifier = Modifier.weight(1f))
+                            HUDDataBlock("ZONE", currentZoneText, modifier = Modifier.weight(1f))
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         val pingText = currentTelemetry?.let {
