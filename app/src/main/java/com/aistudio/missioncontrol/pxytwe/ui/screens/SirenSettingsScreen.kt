@@ -20,21 +20,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aistudio.missioncontrol.pxytwe.AppState
 
-private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
-private val ColorCard @Composable get() = MaterialTheme.colorScheme.surface
-private val ColorTextPrimary @Composable get() = MaterialTheme.colorScheme.onSurface
-private val ColorTextSecondary @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
-private val ColorBorder @Composable get() = MaterialTheme.colorScheme.outline
-private val ColorPrimary @Composable get() = MaterialTheme.colorScheme.primary
-private val ColorIcon @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SirenSettingsScreen(onBack: () -> Unit) {
     var isEnabled by remember { AppState.isSirenEnabled }
 
     Scaffold(
-        containerColor = ColorBackground,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = Modifier.fillMaxSize().statusBarsPadding(),
         topBar = {
             TopAppBar(
@@ -44,11 +36,11 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = ColorTextPrimary
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = ColorBackground)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { innerPadding ->
@@ -62,15 +54,15 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                 Text(
                     "GEOFENCE SETTINGS",
                     style = MaterialTheme.typography.labelSmall,
-                    color = ColorTextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 2.sp
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Siren Configuration",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ColorTextPrimary
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
@@ -81,8 +73,8 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                 // Main Toggle
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = ColorCard),
-                    border = BorderStroke(1.dp, ColorBorder),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -96,13 +88,13 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(if (isEnabled) MaterialTheme.colorScheme.primaryContainer else ColorBorder),
+                                .background(if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.outline),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Default.NotificationsActive,
                                 contentDescription = null,
-                                tint = if (isEnabled) MaterialTheme.colorScheme.primary else ColorTextPrimary,
+                                tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -112,12 +104,12 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                                 "Intrusion Siren",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = ColorTextPrimary
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 "Play loud siren when any device enters the geofenced area.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = ColorTextSecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 16.sp
                             )
                         }
@@ -127,15 +119,13 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                uncheckedThumbColor = ColorTextSecondary,
-                                uncheckedTrackColor = ColorCard,
-                                uncheckedBorderColor = ColorBorder
+                                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                uncheckedTrackColor = MaterialTheme.colorScheme.surface,
+                                uncheckedBorderColor = MaterialTheme.colorScheme.outline
                             )
                         )
                     }
                 }
-
-
             }
         }
     }
