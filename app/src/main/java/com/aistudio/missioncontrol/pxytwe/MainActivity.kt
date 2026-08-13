@@ -2,9 +2,9 @@ package com.aistudio.missioncontrol.pxytwe
 
 import android.os.Bundle
 import android.util.Log
-
-
-
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.getValue
 import com.aistudio.missioncontrol.pxytwe.ui.screens.PinLockScreen
 import com.aistudio.missioncontrol.pxytwe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -50,7 +52,10 @@ class MainActivity : ComponentActivity() {
         Configuration.getInstance().userAgentValue = packageName
 
         // Initialize central AppState to start realtime streams
-        com.aistudio.missioncontrol.pxytwe.AppState.initialize()
+        com.aistudio.missioncontrol.pxytwe.AppState.initialize(applicationContext)
+        
+        // Initialize ThemeManager for System/Light/Dark switching
+        com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager.init(applicationContext)
 
         Log.d(TAG, "MainActivity launched successfully! Hello from Logcat!")
         enableEdgeToEdge()
@@ -108,6 +113,15 @@ class MainActivity : ComponentActivity() {
                                 onBack = { navController.popBackStack() }
                             )
                         }
+                    }
+                    
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route
+                    
+                    if (currentRoute != "pin_lock") {
+                        com.aistudio.missioncontrol.pxytwe.ui.screens.RealtimeStatusStrip(
+                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd)
+                        )
                     }
                 }
             }

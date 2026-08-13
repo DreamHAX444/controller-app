@@ -28,10 +28,23 @@ class SecurityManager(context: Context) {
     private val appContext: Context = context.applicationContext
 
     private val prefs: SharedPreferences by lazy {
+        try {
+            createPrefs()
+        } catch (e: Exception) {
+            // Ponytail: if the Keystore is corrupted or the master key was invalidated,
+            // the app crashes on EncryptedSharedPreferences.create().
+            // We'd rather lose the PIN and have the user re-set it than hard-crash.
+            android.util.Log.e("SecurityManager", "Crypto failure in secure_prefs; clearing.", e)
+            appContext.deleteSharedPreferences("secure_prefs")
+            createPrefs()
+        }
+    }
+
+    private fun createPrefs(): SharedPreferences {
         val masterKey = MasterKey.Builder(appContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-        EncryptedSharedPreferences.create(
+        return EncryptedSharedPreferences.create(
             appContext,
             "secure_prefs",
             masterKey,
@@ -56,5 +69,9 @@ class SecurityManager(context: Context) {
 
     suspend fun verifyPin(pin: String): Boolean = withContext(Dispatchers.IO) {
         prefs.getString("master_pin_hash", null)?.let { it == hashPin(pin) } ?: false
+    }
+
+    suspend fun clearPin() = withContext(Dispatchers.IO) {
+        prefs.edit().remove("master_pin_hash").apply()
     }
 }

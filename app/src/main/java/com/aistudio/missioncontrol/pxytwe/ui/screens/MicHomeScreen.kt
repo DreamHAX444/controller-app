@@ -89,7 +89,7 @@ fun MicHomeScreen(
                 if (activeDeviceId != null) "Uplink active on $activeDeviceId"
                 else "Pick a tracker to listen in",
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
         }

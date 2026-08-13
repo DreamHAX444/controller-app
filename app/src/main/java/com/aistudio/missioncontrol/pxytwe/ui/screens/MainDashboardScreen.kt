@@ -1,6 +1,7 @@
 package com.aistudio.missioncontrol.pxytwe.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,6 +75,7 @@ sealed class DashboardTab(
     object Devices : DashboardTab("devices", "Devices", Icons.Filled.Devices, Icons.Outlined.Devices)
     object Mic : DashboardTab("mic_home", "Mic", Icons.Filled.GraphicEq, Icons.Outlined.GraphicEq)
     object Signals : DashboardTab("signals", "Signals", Icons.Filled.Bolt, Icons.Outlined.Bolt)
+    object Events : DashboardTab("events", "Events", Icons.Filled.History, Icons.Outlined.History)
     object Settings : DashboardTab("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
@@ -90,23 +92,18 @@ fun MainDashboardScreen(
         DashboardTab.Devices,
         DashboardTab.Mic,
         DashboardTab.Signals,
+        DashboardTab.Events,
         DashboardTab.Settings,
     )
 
     Scaffold(
-        topBar = {
-            // Ponytail: E3 was a silent 7s retry loop. Tiny strip with a
-            // color-coded dot. Updating state is read from a single state
-            // flow on SupabaseClientManager — no recomposition churn,
-            // no subscriptions to wire up here.
-            RealtimeStatusStrip()
-        },
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {}
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = innerPadding.calculateTopPadding())
+                // Let the NavHost (and Map) fill the entire screen (edge-to-edge)
         ) {
             NavHost(
                 navController = navController,
@@ -135,8 +132,16 @@ fun MainDashboardScreen(
             composable(DashboardTab.Signals.route) {
                 SignalsScreen()
             }
+            composable(DashboardTab.Events.route) {
+                EventsScreen()
+            }
             composable(DashboardTab.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onNavigateToSiren = { navController.navigate("siren_settings") }
+                )
+            }
+            composable("siren_settings") { 
+                SirenSettingsScreen(onBack = { navController.popBackStack() }) 
             }
         }
 
@@ -169,44 +174,34 @@ fun MainDashboardScreen(
 }
 
 @Composable
-private fun RealtimeStatusStrip() {
-    val state by com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
-        .connectionState
-        .collectAsState()
-    val (label, color) = when (state) {
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connected ->
-            "LIVE" to StatusLive
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Connecting ->
-            "CONNECTING…" to StatusConnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Reconnecting ->
-            "RECONNECTING…" to StatusReconnecting
-        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.ConnectionState.Disconnected ->
-            "OFFLINE" to StatusOffline
-        else -> "—" to StatusUnknown
-    }
-    Row(
+fun PlaceholderScreen(title: String, subtitle: String) {
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.End,
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = androidx.compose.ui.Modifier
-                .size(8.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(color)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.sp,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Filled.Settings,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -222,8 +217,8 @@ private fun FloatingNavigationBar(
             .padding(horizontal = 24.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         shadowElevation = 8.dp
     ) {
         Row(
@@ -246,7 +241,7 @@ private fun FloatingNavigationBar(
                         Icon(
                             imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                             contentDescription = tab.title,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))

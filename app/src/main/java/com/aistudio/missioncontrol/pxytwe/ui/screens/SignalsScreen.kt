@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aistudio.missioncontrol.pxytwe.AppState
@@ -31,6 +32,14 @@ import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
+private val ColorCard @Composable get() = MaterialTheme.colorScheme.surface
+private val ColorTextPrimary @Composable get() = MaterialTheme.colorScheme.onSurface
+private val ColorTextSecondary @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorBorder @Composable get() = MaterialTheme.colorScheme.outline
+private val ColorIcon @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorLiveGreen @Composable get() = MaterialTheme.colorScheme.primary
 
 @Composable
 fun SignalsScreen() {
@@ -65,49 +74,57 @@ fun SignalsScreen() {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = ColorBackground,
         modifier = Modifier.fillMaxSize().statusBarsPadding()
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 24.dp)
         ) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "COMMAND CENTER",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                letterSpacing = 2.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(16.dp))
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+                Text(
+                    text = "COMMAND CENTER",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ColorTextSecondary,
+                    letterSpacing = 2.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Fleet Signals",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ColorTextPrimary
+                )
+            }
+            
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                HeroFleetCard(
+                    anyAwake = anyAwake,
+                    hasTargets = targets.isNotEmpty(),
+                    onWakeAll = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showMessage("Waking all ${targets.size} trackers...")
+                        scope.launch { targets.forEach { SupabaseClientManager.sendWakeCommand(it.name) } }
+                    },
+                    onSleepAll = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showMessage("Putting all ${targets.size} trackers to sleep...")
+                        scope.launch { targets.forEach { SupabaseClientManager.sendSleepCommand(it.name) } }
+                    }
+                )
+                
+                Spacer(Modifier.height(32.dp))
 
-            HeroFleetCard(
-                anyAwake = anyAwake,
-                hasTargets = targets.isNotEmpty(),
-                onWakeAll = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showMessage("Waking all ${targets.size} trackers...")
-                    scope.launch { targets.forEach { SupabaseClientManager.sendWakeCommand(it.name) } }
-                },
-                onSleepAll = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showMessage("Putting all ${targets.size} trackers to sleep...")
-                    scope.launch { targets.forEach { SupabaseClientManager.sendSleepCommand(it.name) } }
-                }
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            Text(
-                "INDIVIDUAL TRACKERS",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 2.sp,
-            )
-            Spacer(Modifier.height(12.dp))
+                Text(
+                    "INDIVIDUAL TRACKERS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ColorTextSecondary,
+                    letterSpacing = 2.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                Spacer(Modifier.height(12.dp))
+            }
 
             if (targets.isEmpty()) {
                 Box(
@@ -117,14 +134,14 @@ fun SignalsScreen() {
                     Text(
                         "No trackers available on the network.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = ColorTextSecondary,
                     )
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(bottom = 100.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(targets, key = { it.name }) { dev ->
                         TrackerSignalCard(
@@ -166,19 +183,16 @@ fun HeroFleetCard(
         label = "pulse_scale"
     )
 
-    val glowColor = if (anyAwake) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
+    val glowColor = if (anyAwake) ColorLiveGreen.copy(alpha = 0.2f) else Color.Transparent
 
-    ElevatedCard(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        elevation = CardDefaults.elevatedCardElevation(
-            defaultElevation = if (anyAwake) 12.dp else 4.dp
-        )
+        colors = CardDefaults.cardColors(containerColor = ColorCard),
+        border = BorderStroke(1.dp, ColorBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(
             modifier = Modifier
@@ -192,50 +206,72 @@ fun HeroFleetCard(
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = if (anyAwake) Icons.Filled.Sensors else Icons.Filled.SensorsOff,
-                    contentDescription = null,
-                    tint = if (anyAwake) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(48.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(if (anyAwake) ColorLiveGreen.copy(alpha = 0.1f) else ColorBorder),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (anyAwake) Icons.Filled.Sensors else Icons.Filled.SensorsOff,
+                        contentDescription = null,
+                        tint = if (anyAwake) ColorLiveGreen else ColorIcon,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = if (anyAwake) "FLEET IS ACTIVE" else "FLEET IS ASLEEP",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    color = ColorTextPrimary,
                     letterSpacing = 1.sp
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (anyAwake) "Telemetry is streaming live." else "Trackers are in standby mode.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = ColorTextSecondary
                 )
                 Spacer(Modifier.height(24.dp))
 
-                Button(
-                    onClick = if (anyAwake) onSleepAll else onWakeAll,
-                    enabled = hasTargets,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (anyAwake) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = if (anyAwake) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                    shape = RoundedCornerShape(16.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Icon(
-                        imageVector = if (anyAwake) Icons.Filled.PowerSettingsNew else Icons.Filled.WbSunny,
-                        contentDescription = null
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Text(
-                        text = if (anyAwake) "SLEEP ALL TRACKERS" else "WAKE ALL TRACKERS",
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
+                    Button(
+                        onClick = onWakeAll,
+                        enabled = hasTargets,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Filled.WbSunny, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(text = "WAKE ALL", fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = onSleepAll,
+                        enabled = hasTargets,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Filled.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(text = "SLEEP ALL", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -271,62 +307,93 @@ fun TrackerSignalCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(containerColor = ColorCard),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, ColorBorder)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha)
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(ColorBorder),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (isLive) Icons.Filled.Sensors else Icons.Filled.SensorsOff,
+                            contentDescription = null,
+                            tint = ColorTextPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    if (isLive) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .align(Alignment.BottomEnd)
+                                .offset(x = (-2).dp, y = (-2).dp)
+                                .clip(CircleShape)
+                                .background(ColorCard), // Stroke effect
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(ColorLiveGreen.copy(alpha = dotAlpha))
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(Modifier.size(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = device.name.uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = ColorTextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-            )
-            Spacer(Modifier.size(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = device.name.uppercase(),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Last seen: $lastSeenStr",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (isLive) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-            
-            FilledTonalIconButton(
-                onClick = onWake,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(Icons.Filled.WbSunny, contentDescription = "Wake", modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.size(8.dp))
-            FilledTonalIconButton(
-                onClick = onSleep,
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                ),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Sleep", modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Last seen: $lastSeenStr",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isLive) ColorLiveGreen else ColorTextSecondary,
+                        fontWeight = if (isLive) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+                
+                Surface(
+                    shape = RoundedCornerShape(percent = 50),
+                    color = ColorCard,
+                    border = BorderStroke(1.dp, ColorBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.height(IntrinsicSize.Min),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onWake, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Filled.WbSunny, contentDescription = "Wake", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onSleep, modifier = Modifier.size(44.dp)) {
+                            Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Sleep", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
             }
         }
     }

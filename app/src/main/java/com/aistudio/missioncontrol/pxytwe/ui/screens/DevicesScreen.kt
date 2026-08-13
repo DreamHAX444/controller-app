@@ -12,12 +12,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +33,15 @@ import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// Map our legacy constants to the new dynamic ThemeManager tokens
+private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
+private val ColorCard @Composable get() = MaterialTheme.colorScheme.surface
+private val ColorTextPrimary @Composable get() = MaterialTheme.colorScheme.onSurface
+private val ColorTextSecondary @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorBorder @Composable get() = MaterialTheme.colorScheme.outline
+private val ColorIcon @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val ColorLiveGreen @Composable get() = MaterialTheme.colorScheme.primary
 
 @Composable
 fun DevicesScreen(
@@ -56,13 +69,13 @@ fun DevicesScreen(
 
     val devices by remember {
         derivedStateOf {
-            activeMap.values.toList().sortedByDescending { it.lastSeen }
+            activeMap.values.toList().sortedBy { it.name.lowercase() }
         }
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = ColorBackground,
         modifier = Modifier.fillMaxSize().statusBarsPadding()
     ) { innerPadding ->
         Column(
@@ -70,21 +83,30 @@ fun DevicesScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Header Section
             Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Text(
-                    "FLEET DIRECTORY",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "FLEET DIRECTORY",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ColorTextSecondary,
+                        letterSpacing = 2.sp
+                    )
+
+                }
+                
                 Spacer(Modifier.height(4.dp))
+                
                 Text(
-                    if (devices.isEmpty()) "No devices on the network"
+                    if (devices.isEmpty()) "0 ACTIVE DEVICES"
                     else "${devices.size} ACTIVE DEVICE${if (devices.size == 1) "" else "S"}",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ColorTextPrimary
                 )
             }
 
@@ -93,11 +115,12 @@ fun DevicesScreen(
                 return@Column
             }
 
+            // Device Card List
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 100.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 items(devices, key = { it.name }) { dev ->
@@ -160,131 +183,154 @@ private fun DeviceCard(
         diff < 3_600_000 -> "${diff / 60_000}m ago"
         else -> "${diff / 3_600_000}h ago"
     }
-    
-    val transition = rememberInfiniteTransition(label = "dot_pulse")
-    val dotAlpha by transition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = if (isLive) 1f else 0.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isLive) 8.dp else 2.dp
-        ),
-        border = BorderStroke(
-            if (isLive) 1.5.dp else 1.dp, 
-            if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) 
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-        )
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = ColorCard),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, ColorBorder)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (isLive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = dotAlpha * 0.4f) else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.size(40.dp),
-                    contentColor = if (isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Top Section
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Device Icon with Status Dot
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(ColorBorder),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Smartphone,
+                            contentDescription = null,
+                            tint = ColorTextPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    if (isLive) {
                         Box(
                             modifier = Modifier
                                 .size(12.dp)
+                                .align(Alignment.BottomEnd)
+                                .offset(x = (-2).dp, y = (-2).dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (isLive) MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha)
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                        )
+                                .background(ColorCard), // Stroke effect
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(ColorLiveGreen)
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.size(16.dp))
+
+                Spacer(Modifier.width(16.dp))
+
+                // Identity Info
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         dev.name.uppercase(),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        letterSpacing = 0.5.sp,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = ColorTextPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = "Last seen: $lastSeen",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ColorTextSecondary,
+                    )
+                }
+
+                // More Options
+                IconButton(onClick = { /* TODO */ }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "More options",
+                        tint = ColorIcon
                     )
                 }
             }
-            
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-            Spacer(Modifier.height(12.dp))
-            
+
+            // Divider
+            HorizontalDivider(
+                color = ColorBorder,
+                thickness = 1.dp,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            // Bottom Section
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // Coordinates
                 Column {
-                    Text(
-                        "COORDINATES",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 1.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.MyLocation,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = ColorIcon
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "COORDINATES",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ColorTextSecondary,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "%.4f, %.4f".format(dev.lat, dev.lon),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = ColorTextPrimary,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        letterSpacing = 0.5.sp
                     )
                 }
-                
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalIconButton(
-                        onClick = onConnectClick,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = if (isLive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (isLive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.size(44.dp)
+
+                // Actions Pill
+                Surface(
+                    shape = RoundedCornerShape(percent = 50),
+                    color = ColorCard,
+                    border = BorderStroke(1.dp, ColorBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.height(IntrinsicSize.Min),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Filled.Wifi, contentDescription = "Check Connection", modifier = Modifier.size(20.dp))
-                    }
-                    FilledTonalIconButton(
-                        onClick = onMicClick,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(Icons.Filled.GraphicEq, contentDescription = "Listen", modifier = Modifier.size(20.dp))
-                    }
-                    FilledTonalIconButton(
-                        onClick = onDeleteClick,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete Device", modifier = Modifier.size(20.dp))
+                        IconButton(onClick = onConnectClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.Wifi, contentDescription = "Connect", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onMicClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.GraphicEq, contentDescription = "Listen", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onDeleteClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }
@@ -302,10 +348,9 @@ private fun EmptyDevices() {
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            )
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = ColorCard),
+            border = BorderStroke(1.dp, ColorBorder)
         ) {
             Column(
                 modifier = Modifier
@@ -317,22 +362,22 @@ private fun EmptyDevices() {
                 Icon(
                     Icons.Filled.Devices,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                    modifier = Modifier.size(72.dp),
+                    tint = ColorIcon,
+                    modifier = Modifier.size(48.dp),
                 )
                 Spacer(Modifier.height(24.dp))
                 Text(
                     "NO TELEMETRY YET",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    color = ColorTextPrimary,
                     letterSpacing = 1.sp,
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Devices will appear here automatically once a Live Tracker app sends its first location ping.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = ColorTextSecondary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }

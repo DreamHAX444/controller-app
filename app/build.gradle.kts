@@ -1,105 +1,60 @@
 plugins {
   alias(libs.plugins.android.application)
-  alias(libs.plugins.kotlinAndroid)
-  alias(libs.plugins.kotlinCompose)
-  alias(libs.plugins.roborazzi)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.kotlinSerialization)
+  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
-  namespace = "com.aistudio.missioncontrol.pxytwe"
-  compileSdk = 35
-
-  defaultConfig {
-    applicationId = "com.aistudio.missioncontrol.pxytwe"
-    minSdk = 24
-    targetSdk = 35
-    versionCode = 1
-    versionName = "1.0"
-
-    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-  }
-
-  signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+    namespace = "com.example.livelocationservice"
+    compileSdk = 36
+    defaultConfig {
+        applicationId = "com.example.livelocationservice"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
     }
-  }
 
-  buildTypes {
-    release {
-      isCrunchPngs = false
-      isMinifyEnabled = false
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
-    debug { }
-  }
-  compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
-  }
-  kotlinOptions {
-    jvmTarget = "11"
-  }
-  buildFeatures {
-    compose = true
-    buildConfig = true
-  }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+      aidl = false
+      buildConfig = false
+      shaders = false
+    }
+
+    packaging {
+      resources {
+        excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      }
+    }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
+kotlin {
+    jvmToolchain(17)
 }
+
 dependencies {
-  implementation(platform(libs.androidx.compose.bom))
-  implementation(libs.androidx.compose.material3)
-  implementation(libs.androidx.compose.material.icons.core)
-  implementation(libs.androidx.compose.material.icons.extended)
-  implementation(libs.androidx.compose.ui)
-  implementation(libs.androidx.compose.ui.graphics)
-  implementation(libs.androidx.compose.ui.tooling.preview)
+  // Core Android dependencies
   implementation(libs.androidx.core.ktx)
-  implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
-  implementation(libs.androidx.lifecycle.viewmodel.compose)
-  implementation(libs.androidx.navigation.compose)
-  implementation(libs.kotlinx.coroutines.android)
-  implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.logging.interceptor)
-  implementation(libs.okhttp)
-  implementation(libs.osmdroid.android)
-  implementation(libs.androidx.security.crypto)
-  implementation(libs.retrofit)
-  implementation("io.github.jan-tennert.supabase:postgrest-kt:2.4.0")
-  implementation("io.github.jan-tennert.supabase:realtime-kt:2.4.0")
-  implementation("io.github.jan-tennert.supabase:storage-kt:2.4.0")
+  implementation("androidx.activity:activity-ktx:1.9.0")
+
+  // Added Dependencies
+  implementation(platform("io.github.jan-tennert.supabase:bom:3.7.0-beta-1"))
+  implementation("io.github.jan-tennert.supabase:postgrest-kt")
+  implementation("io.github.jan-tennert.supabase:realtime-kt")
+  implementation("io.github.jan-tennert.supabase:storage-kt")
   implementation("io.ktor:ktor-client-cio:2.3.11")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-  testImplementation(libs.androidx.compose.ui.test.junit4)
-  testImplementation(libs.androidx.core)
-  testImplementation(libs.androidx.junit)
-  testImplementation(libs.junit)
-  testImplementation(libs.kotlinx.coroutines.test)
-  testImplementation(libs.robolectric)
-  testImplementation(libs.roborazzi)
-  testImplementation(libs.roborazzi.compose)
-  testImplementation(libs.roborazzi.junit.rule)
-  androidTestImplementation(platform(libs.androidx.compose.bom))
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-  androidTestImplementation(libs.androidx.espresso.core)
-  androidTestImplementation(libs.androidx.junit)
-  androidTestImplementation(libs.androidx.runner)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
-  debugImplementation(libs.androidx.compose.ui.tooling)
-  debugImplementation(libs.leakcanary)
+  implementation("io.ktor:ktor-client-okhttp:3.0.0")
+  implementation("com.google.android.gms:play-services-location:21.3.0")
+  implementation("androidx.work:work-runtime-ktx:2.9.1")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }

@@ -17,7 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,7 @@ fun PinLockScreen(
 ) {
     val context = LocalContext.current
     val securityManager = remember { SecurityManager(context) }
+    val haptic = LocalHapticFeedback.current
 
     // We don't know yet whether the user has set a PIN — fetch off-main on
     // composition. While loading we assume "needs setup".
@@ -111,23 +114,14 @@ fun PinLockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Surface(
-                shape = CircleShape,
-                color = if (isError) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
-                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                modifier = Modifier.size(100.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(32.dp)
+            )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = when {
@@ -135,9 +129,9 @@ fun PinLockScreen(
                     isSettingPin && pendingPin != null -> "CONFIRM PIN"
                     else -> "ENTER MASTER PIN"
                 },
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Normal,
                 letterSpacing = 2.sp
             )
 
@@ -173,23 +167,24 @@ fun PinLockScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 for (i in 0 until 4) {
+                    val isFilled = pin.length > i
+                    val size by animateDpAsState(targetValue = if (isFilled) 14.dp else 10.dp, label = "dotSize")
+                    val alpha by animateFloatAsState(targetValue = if (isFilled) 1f else 0.2f, label = "dotAlpha")
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .border(
-                                2.dp,
-                                if (isError) MaterialTheme.colorScheme.error
-                                else if (pin.length > i) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                CircleShape
-                            )
-                            .background(
-                                if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-                                else if (pin.length > i) MaterialTheme.colorScheme.primary
-                                else Color.Transparent
-                            )
-                    )
+                            .size(14.dp), // Fixed bounds to prevent shifting
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(size)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isError) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.primary.copy(alpha = alpha)
+                                )
+                        )
+                    }
                 }
             }
 
@@ -214,6 +209,7 @@ fun PinLockScreen(
                                         .size(72.dp)
                                         .clip(CircleShape)
                                         .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             if (pin.isNotEmpty() && !isError) {
                                                 pin = pin.dropLast(1)
                                             }
@@ -227,29 +223,25 @@ fun PinLockScreen(
                                     )
                                 }
                             } else {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                                    modifier = Modifier.size(72.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (pin.length < 4 && !isError) {
+                                                pin += key
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clickable {
-                                                if (pin.length < 4 && !isError) {
-                                                    pin += key
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = key,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            fontSize = 28.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
+                                    Text(
+                                        text = key,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 32.sp,
+                                        fontWeight = FontWeight.Light,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
                                 }
                             }
                         }
