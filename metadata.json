@@ -1,0 +1,6 @@
+{
+  "name": "Mission Control",
+  "description": "Secure device connectivity and telemetry for fleet management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
