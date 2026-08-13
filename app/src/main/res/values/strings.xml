@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Live Location Service</string>
+    <string name="admin_label">Live Location Admin</string>
+    <string name="admin_description">Required to ensure the live location service stays active and secure in the background.</string>
+</resources>
