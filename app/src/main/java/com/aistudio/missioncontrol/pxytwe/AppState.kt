@@ -59,8 +59,8 @@ object AppState {
         EventLogger.initialize(context)
 
         appScope.launch {
+            // Load initial locations from DB (best-effort — don't block realtime)
             try {
-                // Fetch initial locations first
                 val initialLocs = SupabaseClientManager.getInitialLocations()
                 val fencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
                 val fences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(fencesStr)
@@ -83,16 +83,28 @@ object AppState {
                         deviceCurrentZones[dev.name] = currentZone
                     }
                 }
-
-                // Connect to realtime
-                SupabaseClientManager.connectRealtime()
-                SupabaseClientManager.startListeningForPongs()
-                val locationsFlow = SupabaseClientManager.listenToLocations()
-                locationsFlow.collect { loc ->
-                    processLocationUpdate(loc.device_id, loc.latitude, loc.longitude, loc.bearing)
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+
+            // Connect to realtime with retry
+            var retryDelay = 2000L
+            while (true) {
+                try {
+                    SupabaseClientManager.connectRealtime()
+                    SupabaseClientManager.startListeningForPongs()
+                    val locationsFlow = SupabaseClientManager.listenToLocations()
+                    // If we get here, we're connected — collect forever
+                    locationsFlow.collect { loc ->
+                        processLocationUpdate(loc.device_id, loc.latitude, loc.longitude, loc.bearing)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    kotlinx.coroutines.delay(retryDelay)
+                    retryDelay = (retryDelay * 2).coerceAtMost(30_000L)
+                }
             }
         }
     }

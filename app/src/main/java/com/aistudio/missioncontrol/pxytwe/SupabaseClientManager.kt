@@ -3,10 +3,11 @@ package com.aistudio.missioncontrol.pxytwe
 import android.util.Log
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.annotations.SupabaseInternal
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
-import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
@@ -28,6 +29,7 @@ import kotlinx.coroutines.async
 import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.broadcast
 import kotlinx.serialization.Serializable
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.engine.cio.CIO
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -71,6 +73,7 @@ object SupabaseClientManager {
 
     enum class ConnectionState { Disconnected, Connecting, Connected, Reconnecting }
 
+    @OptIn(SupabaseInternal::class)
     val client: SupabaseClient by lazy {
         createSupabaseClient(
             supabaseUrl = BuildConfig.SUPABASE_URL,
@@ -78,6 +81,15 @@ object SupabaseClientManager {
         ) {
             httpEngine = CIO.create()
             install(Postgrest)
+            // Ponytail: increase timeout to 30s to avoid HttpRequestTimeoutException
+            // on large initial location fetches or slow networks.
+            httpConfig {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = 30000L
+                    connectTimeoutMillis = 10000L
+                    socketTimeoutMillis = 10000L
+                }
+            }
             // Ponytail: shorter heartbeat + bounded reconnect so the SDK stops
             // soaking battery on a dead socket. Add when: replace with a true
             // exponential backoff if reconnects thunder on a flaky network.
@@ -223,15 +235,20 @@ object SupabaseClientManager {
         
         val channel = client.realtime.channel(topic)
         val flow = channel.broadcastFlow<LocationData>(event = "location")
-        channel.subscribe()
+        channel.subscribe(blockUntilSubscribed = true)
+        Log.d("SupabaseClient", "Subscribed to locations channel")
         return flow
     }
 
     suspend fun getInitialLocations(): List<LocationData> {
         return try {
-            val result = client.postgrest["locations"].select {
+            // Ponytail: Only fetch columns we actually need for the dashboard.
+            // This prevents fetching heavy metadata/audit columns and avoids hitting the timeout.
+            val result = client.postgrest["locations"].select(
+                Columns.list("device_id", "latitude", "longitude", "accuracy", "bearing", "created_at")
+            ) {
                 order("created_at", order = Order.DESCENDING)
-                limit(1000)
+                limit(500)
             }
             val allLocs = result.decodeList<LocationData>()
             // group by device_id and take the most recent
