@@ -1,6 +1,5 @@
 package com.aistudio.missioncontrol.pxytwe.ui.screens
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,12 +15,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +33,7 @@ import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
 // Map our legacy constants to the new dynamic ThemeManager tokens
 private val ColorBackground @Composable get() = MaterialTheme.colorScheme.background
@@ -62,7 +63,7 @@ fun DevicesScreen(
 
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1000)
+            delay(1.seconds)
             now = System.currentTimeMillis()
         }
     }
@@ -148,6 +149,36 @@ fun DevicesScreen(
                                 }
                             }
                         },
+                        onStatusClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            scope.launch {
+                                try {
+                                    showMessage("Requesting hardware status from ${dev.name}...")
+                                    val status = SupabaseClientManager.checkDeviceStatus(dev.name)
+                                    
+                                    if (status != null) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        showMessage("Status for ${dev.name}: $status")
+                                    } else {
+                                        showMessage("Status request failed: ${dev.name} did not respond.")
+                                    }
+                                } catch (e: Exception) {
+                                    showMessage("Error requesting status: ${e.message}")
+                                }
+                            }
+                        },
+                        onLocationEnableClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            scope.launch {
+                                try {
+                                    showMessage("Sending Location Enable command to ${dev.name}...")
+                                    SupabaseClientManager.sendEnableLocationCommand(dev.name)
+                                    showMessage("Command sent to ${dev.name}. Check status shortly.")
+                                } catch (e: Exception) {
+                                    showMessage("Error sending command: ${e.message}")
+                                }
+                            }
+                        },
                         onDeleteClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             scope.launch {
@@ -173,6 +204,8 @@ private fun DeviceCard(
     now: Long,
     onMicClick: () -> Unit,
     onConnectClick: () -> Unit,
+    onStatusClick: () -> Unit,
+    onLocationEnableClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     val diff = now - dev.lastSeen
@@ -321,6 +354,14 @@ private fun DeviceCard(
                     ) {
                         IconButton(onClick = onConnectClick, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Filled.Wifi, contentDescription = "Connect", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onStatusClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.HealthAndSafety, contentDescription = "Check Status", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onLocationEnableClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.LocationOn, contentDescription = "Enable Location", tint = ColorIcon, modifier = Modifier.size(18.dp))
                         }
                         VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
                         IconButton(onClick = onMicClick, modifier = Modifier.size(36.dp)) {

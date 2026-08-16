@@ -11,16 +11,12 @@ import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.channel
-import io.github.jan.supabase.realtime.decodeRecordOrNull
-import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
@@ -35,7 +31,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
@@ -108,6 +103,7 @@ object SupabaseClientManager {
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
 
     private val _pingFlow = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    private val _statusFlow = MutableSharedFlow<CommandPayload>(extraBufferCapacity = 10)
 
     init {
         // Realtime.status is a public StateFlow<Realtime.Status> with
@@ -116,13 +112,12 @@ object SupabaseClientManager {
         // treat DISCONNECTED as Offline.
         client.realtime.status.collectSafely(scope) { status ->
             _connectionState.value = when (status) {
-                io.github.jan.supabase.realtime.Realtime.Status.CONNECTED ->
+                Realtime.Status.CONNECTED ->
                     ConnectionState.Connected
-                io.github.jan.supabase.realtime.Realtime.Status.CONNECTING ->
+                Realtime.Status.CONNECTING ->
                     ConnectionState.Connecting
-                io.github.jan.supabase.realtime.Realtime.Status.DISCONNECTED ->
+                Realtime.Status.DISCONNECTED ->
                     ConnectionState.Disconnected
-                else -> ConnectionState.Disconnected
             }
         }
     }
@@ -135,7 +130,7 @@ object SupabaseClientManager {
     private suspend fun getOrCreateCommandsChannel(): RealtimeChannel {
         val topic = "public:commands"
         commandsChannel?.let { ch ->
-            if (ch.status.value == io.github.jan.supabase.realtime.RealtimeChannel.Status.SUBSCRIBED) return ch
+            if (ch.status.value == RealtimeChannel.Status.SUBSCRIBED) return ch
         }
         // Remove any stale subscription with the same topic
         client.realtime.subscriptions.values.find { it.topic == topic }?.let {
@@ -156,6 +151,14 @@ object SupabaseClientManager {
                     _pingFlow.emit(pong.device_id)
                 }
             }
+            scope.launch {
+                channel.broadcastFlow<CommandPayload>(event = "command").collect { payload ->
+                    if (payload.command == "status_response") {
+                        Log.d("SupabaseClient", "Status response received from ${payload.device_id}: ${payload.params}")
+                        _statusFlow.emit(payload)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("SupabaseClient", "startListeningForPongs failed", e)
         }
@@ -165,18 +168,7 @@ object SupabaseClientManager {
         client.realtime.connect()
     }
 
-    suspend fun disconnectRealtime() {
-        client.realtime.disconnect()
-    }
 
-    /**
-     * Ponytail: device id strings contain literal spaces (e.g. "Samsung
-     * SM-S908B"). PostgREST realtime filter values must use RFC 3986 percent
-     * encoding, where spaces are `%20`. Java's [URLEncoder] produces
-     * `application/x-www-form-urlencoded` style where spaces are `+` —
-     * PostgREST does not decode `+` to a space, so without this replace
-     * filter subscribes silently no-op.
-     */
     internal fun encodeFilterValue(raw: String): String =
         URLEncoder.encode(raw, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
@@ -190,10 +182,14 @@ object SupabaseClientManager {
         sendCommand(deviceId, "sleep")
     }
 
+    suspend fun sendEnableLocationCommand(deviceId: String) {
+        sendCommand(deviceId, "enable_location")
+    }
+
     suspend fun pingDevice(deviceId: String): Long? {
         val start = System.currentTimeMillis()
         return try {
-            withTimeout(10_000) {
+            withTimeout(10.seconds) {
                 val pingDeferred = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
                     _pingFlow.first { it == deviceId }
                 }
@@ -203,10 +199,29 @@ object SupabaseClientManager {
                 pingDeferred.await()
                 System.currentTimeMillis() - start
             }
-        } catch (e: TimeoutCancellationException) {
+        } catch (_: TimeoutCancellationException) {
             null
         } catch (e: Exception) {
             Log.e("SupabaseClient", "pingDevice failed", e)
+            null
+        }
+    }
+
+    suspend fun checkDeviceStatus(deviceId: String): String? {
+        return try {
+            withTimeout(10.seconds) {
+                val statusDeferred = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                    _statusFlow.first { it.device_id == deviceId }.params
+                }
+                
+                sendCommand(deviceId, "check_status")
+                
+                statusDeferred.await()
+            }
+        } catch (_: TimeoutCancellationException) {
+            null
+        } catch (e: Exception) {
+            Log.e("SupabaseClient", "checkDeviceStatus failed", e)
             null
         }
     }
@@ -248,7 +263,7 @@ object SupabaseClientManager {
                 Columns.list("device_id", "latitude", "longitude", "accuracy", "bearing", "created_at")
             ) {
                 order("created_at", order = Order.DESCENDING)
-                limit(500)
+                limit(5000)
             }
             val allLocs = result.decodeList<LocationData>()
             // group by device_id and take the most recent
@@ -287,14 +302,14 @@ object SupabaseClientManager {
 
 // Ponytail: collect the channel.status flow inside a printable scope so we
 // can wrap it once with an exception-trap guard.
-private fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
+private fun <T> Flow<T>.collectSafely(
     scope: CoroutineScope,
     block: suspend (T) -> Unit,
 ) {
     scope.launch {
         try {
             collect { block(it) }
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e("SupabaseClient", "realtime state collector died", e)

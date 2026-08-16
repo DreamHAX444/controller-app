@@ -51,7 +51,7 @@ fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
             "RECONNECTING…" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusReconnecting
         SupabaseClientManager.ConnectionState.Disconnected ->
             "OFFLINE" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusOffline
-        else -> "—" to com.aistudio.missioncontrol.pxytwe.ui.theme.StatusUnknown
+
     }
     Row(
         modifier = modifier
