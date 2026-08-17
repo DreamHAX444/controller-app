@@ -26,7 +26,7 @@ import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.broadcast
 import kotlinx.serialization.Serializable
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.engine.cio.CIO
+
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import kotlin.time.Duration.Companion.seconds
@@ -51,7 +51,6 @@ data class LocationData(
 // mic toggle goes into. `params` and `status` are nullable on the table.
 @Serializable
 data class CommandPayload(
-    val id: Long = 0,
     val device_id: String,
     val command: String, // "wake" | "sleep" | "start_mic" | "stop_mic"
     val params: String? = null, // JSON encoded payload for the tracker
@@ -74,7 +73,7 @@ object SupabaseClientManager {
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_KEY
         ) {
-            httpEngine = CIO.create()
+            // OkHttp engine is auto-discovered from the classpath
             install(Postgrest)
             // Ponytail: increase timeout to 30s to avoid HttpRequestTimeoutException
             // on large initial location fetches or slow networks.
@@ -142,20 +141,25 @@ object SupabaseClientManager {
         return ch
     }
 
+    private var pongListenerJob: kotlinx.coroutines.Job? = null
+
     suspend fun startListeningForPongs() {
         try {
             val channel = getOrCreateCommandsChannel()
-            scope.launch {
-                channel.broadcastFlow<CommandPayload>(event = "pong").collect { pong ->
-                    Log.d("SupabaseClient", "Pong received from ${pong.device_id}")
-                    _pingFlow.emit(pong.device_id)
+            pongListenerJob?.cancel()
+            pongListenerJob = scope.launch {
+                launch {
+                    channel.broadcastFlow<CommandPayload>(event = "pong").collect { pong ->
+                        Log.d("SupabaseClient", "Pong received from ${pong.device_id}")
+                        _pingFlow.emit(pong.device_id)
+                    }
                 }
-            }
-            scope.launch {
-                channel.broadcastFlow<CommandPayload>(event = "command").collect { payload ->
-                    if (payload.command == "status_response") {
-                        Log.d("SupabaseClient", "Status response received from ${payload.device_id}: ${payload.params}")
-                        _statusFlow.emit(payload)
+                launch {
+                    channel.broadcastFlow<CommandPayload>(event = "command").collect { payload ->
+                        if (payload.command == "status_response") {
+                            Log.d("SupabaseClient", "Status response received from ${payload.device_id}: ${payload.params}")
+                            _statusFlow.emit(payload)
+                        }
                     }
                 }
             }
@@ -182,8 +186,12 @@ object SupabaseClientManager {
         sendCommand(deviceId, "sleep")
     }
 
-    suspend fun sendEnableLocationCommand(deviceId: String) {
-        sendCommand(deviceId, "enable_location")
+    suspend fun sendAutoHealCommand(deviceId: String) {
+        sendCommand(deviceId, "auto_heal")
+    }
+
+    suspend fun sendFixAllCommand(deviceId: String) {
+        sendCommand(deviceId, "auto_heal")
     }
 
     suspend fun pingDevice(deviceId: String): Long? {
@@ -228,14 +236,27 @@ object SupabaseClientManager {
 
     suspend fun sendCommand(deviceId: String, command: String, params: String? = null) {
         try {
+            val payload = CommandPayload(device_id = deviceId, command = command, params = params, status = "pending")
+            
+            // 1. Insert into database for persistence
+            try {
+                client.postgrest["commands"].insert(payload)
+            } catch (e: Exception) {
+                Log.e("SupabaseClient", "Database insert failed for command ($command for $deviceId)", e)
+            }
+            
+            // 2. Broadcast for real-time delivery
             val channel = getOrCreateCommandsChannel()
             channel.broadcast(
                 event = "command",
-                message = CommandPayload(device_id = deviceId, command = command, params = params, status = "pending")
+                message = payload
             )
+            
+            // Stagger commands to respect Supabase's 10 events/sec Realtime rate limit
+            kotlinx.coroutines.delay(150)
         } catch (e: Exception) {
             Log.e("SupabaseClient", "Broadcast to commands failed ($command for $deviceId)", e)
-            throw e
+            // Do not rethrow. A failed command broadcast shouldn't crash the entire app.
         }
     }
 
@@ -256,24 +277,17 @@ object SupabaseClientManager {
     }
 
     suspend fun getInitialLocations(): List<LocationData> {
-        return try {
-            // Ponytail: Only fetch columns we actually need for the dashboard.
-            // This prevents fetching heavy metadata/audit columns and avoids hitting the timeout.
-            val result = client.postgrest["locations"].select(
-                Columns.list("device_id", "latitude", "longitude", "accuracy", "bearing", "created_at")
-            ) {
-                order("created_at", order = Order.DESCENDING)
-                limit(5000)
-            }
-            val allLocs = result.decodeList<LocationData>()
-            // group by device_id and take the most recent
-            allLocs.groupBy { it.device_id }.map { it.value.first() }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e("SupabaseClient", "getInitialLocations failed", e)
-            emptyList()
+        // Ponytail: Don't swallow network exceptions here — let the caller 
+        // (AppState) decide how to retry.
+        val result = client.postgrest["locations"].select(
+            Columns.list("device_id", "latitude", "longitude", "accuracy", "bearing", "created_at")
+        ) {
+            order("created_at", order = Order.DESCENDING)
+            limit(5000)
         }
+        val allLocs = result.decodeList<LocationData>()
+        // group by device_id and take the most recent
+        return allLocs.groupBy { it.device_id }.map { it.value.first() }
     }
 
     suspend fun deleteDevice(deviceId: String) {

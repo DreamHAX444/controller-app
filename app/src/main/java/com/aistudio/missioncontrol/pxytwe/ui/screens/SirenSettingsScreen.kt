@@ -31,6 +31,7 @@ private val ColorIcon @Composable get() = MaterialTheme.colorScheme.onSurfaceVar
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SirenSettingsScreen(onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var isEnabled by remember { AppState.isSirenEnabled }
 
     Scaffold(
@@ -123,7 +124,11 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                         }
                         Switch(
                             checked = isEnabled,
-                            onCheckedChange = { isEnabled = it },
+                            onCheckedChange = { 
+                                isEnabled = it
+                                val prefs = context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE)
+                                prefs.edit().putBoolean("siren_enabled", it).apply()
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                                 checkedTrackColor = MaterialTheme.colorScheme.primary,

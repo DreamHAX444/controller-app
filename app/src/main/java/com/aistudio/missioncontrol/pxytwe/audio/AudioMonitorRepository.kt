@@ -80,7 +80,7 @@ object AudioMonitorRepository {
      * `media` when its mic is engaged.
      */
     suspend fun startMonitoring(deviceId: String): Result<String> {
-        val params = """{"sample_rate_hz":16000,"chunk_ms":250}"""
+        val params = """{"sample_rate_hz":8000,"chunk_ms":500}"""
         setStatus(MonitorStatus.Starting, "Sending uplink request to $deviceId…")
         return try {
             SupabaseClientManager.sendCommand(deviceId, "start_mic", params)

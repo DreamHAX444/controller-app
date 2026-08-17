@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * audibly stutter playback.
  */
 class AmbientAudioPlayer(
-    private val sampleRateHz: Int = 16_000
+    private val sampleRateHz: Int = 8_000
 ) {
     private var track: AudioTrack? = null
     private val playing = AtomicBoolean(false)

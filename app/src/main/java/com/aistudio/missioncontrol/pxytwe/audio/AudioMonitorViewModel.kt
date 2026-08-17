@@ -66,6 +66,7 @@ class AudioMonitorViewModel(
     private var deviceId: String? = null
     private var collectorJob: Job? = null
     private var staleWatchdog: Job? = null
+    private var keepAliveJob: Job? = null
 
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     private val logCap = 200
@@ -138,6 +139,14 @@ class AudioMonitorViewModel(
                 return@launch
             }
             log("COMMAND SENT. AWAITING AUDIO DATA…")
+
+            keepAliveJob = viewModelScope.launch {
+                while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+                    kotlinx.coroutines.delay(15_000)
+                    log("SENDING KEEP-ALIVE…")
+                    AudioMonitorRepository.startMonitoring(deviceId)
+                }
+            }
         }
 
         staleWatchdog = viewModelScope.launch {
@@ -157,6 +166,8 @@ class AudioMonitorViewModel(
         collectorJob = null
         staleWatchdog?.cancel()
         staleWatchdog = null
+        keepAliveJob?.cancel()
+        keepAliveJob = null
         player.stop()
         log("STOPPING UPLINK…")
 

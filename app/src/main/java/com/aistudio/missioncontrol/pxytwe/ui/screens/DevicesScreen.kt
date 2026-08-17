@@ -53,6 +53,7 @@ fun DevicesScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = LocalHapticFeedback.current
+    var showDeleteDialogFor by remember { mutableStateOf<String?>(null) }
 
     val showMessage: (String) -> Unit = { msg ->
         scope.launch {
@@ -167,34 +168,59 @@ fun DevicesScreen(
                                 }
                             }
                         },
-                        onLocationEnableClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onAutoHealClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             scope.launch {
                                 try {
-                                    showMessage("Sending Location Enable command to ${dev.name}...")
-                                    SupabaseClientManager.sendEnableLocationCommand(dev.name)
-                                    showMessage("Command sent to ${dev.name}. Check status shortly.")
+                                    showMessage("Triggering Universal Auto-Heal on ${dev.name}...")
+                                    SupabaseClientManager.sendAutoHealCommand(dev.name)
+                                    showMessage("Universal Auto-Heal signal sent to ${dev.name}.")
                                 } catch (e: Exception) {
-                                    showMessage("Error sending command: ${e.message}")
+                                    showMessage("Error sending Auto-Heal command: ${e.message}")
                                 }
                             }
                         },
                         onDeleteClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            scope.launch {
-                                try {
-                                    SupabaseClientManager.deleteDevice(dev.name)
-                                    AppState.activeDevices.remove(dev.name)
-                                    showMessage("Deleted ${dev.name}")
-                                } catch (e: Exception) {
-                                    showMessage("Failed to delete ${dev.name}: ${e.message}")
-                                }
-                            }
+                            showDeleteDialogFor = dev.name
                         }
                     )
                 }
             }
         }
+    }
+
+    if (showDeleteDialogFor != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialogFor = null },
+            containerColor = ColorCard,
+            titleContentColor = ColorTextPrimary,
+            textContentColor = ColorTextSecondary,
+            title = { Text("Delete Device?") },
+            text = { Text("Are you sure you want to delete '${showDeleteDialogFor}'? All history will be wiped.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val devName = showDeleteDialogFor!!
+                        showDeleteDialogFor = null
+                        scope.launch {
+                            try {
+                                SupabaseClientManager.deleteDevice(devName)
+                                AppState.activeDevices.remove(devName)
+                                showMessage("Deleted $devName")
+                            } catch (e: Exception) {
+                                showMessage("Failed to delete $devName: ${e.message}")
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("DELETE") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialogFor = null }) { Text("CANCEL", color = ColorTextSecondary) }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 
@@ -205,7 +231,7 @@ private fun DeviceCard(
     onMicClick: () -> Unit,
     onConnectClick: () -> Unit,
     onStatusClick: () -> Unit,
-    onLocationEnableClick: () -> Unit,
+    onAutoHealClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     val diff = now - dev.lastSeen
@@ -262,9 +288,9 @@ private fun DeviceCard(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(ColorLiveGreen)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(ColorLiveGreen)
                             )
                         }
                     }
@@ -291,12 +317,42 @@ private fun DeviceCard(
                 }
 
                 // More Options
-                IconButton(onClick = { /* TODO */ }) {
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = "More options",
-                        tint = ColorIcon
-                    )
+                Box {
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "More options",
+                            tint = ColorIcon
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                        containerColor = ColorCard
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Universal Auto-Heal (Fix All)", color = ColorTextPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onAutoHealClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Check Hardware Status", color = ColorTextPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onStatusClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Test Ping Connection", color = ColorTextPrimary) },
+                            onClick = {
+                                menuExpanded = false
+                                onConnectClick()
+                            }
+                        )
+                    }
                 }
             }
 
@@ -360,8 +416,8 @@ private fun DeviceCard(
                             Icon(Icons.Filled.HealthAndSafety, contentDescription = "Check Status", tint = ColorIcon, modifier = Modifier.size(18.dp))
                         }
                         VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
-                        IconButton(onClick = onLocationEnableClick, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Filled.LocationOn, contentDescription = "Enable Location", tint = ColorIcon, modifier = Modifier.size(18.dp))
+                        IconButton(onClick = onAutoHealClick, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.LocationOn, contentDescription = "Universal Auto-Heal", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         }
                         VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
                         IconButton(onClick = onMicClick, modifier = Modifier.size(36.dp)) {

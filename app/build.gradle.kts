@@ -114,7 +114,7 @@ dependencies {
   implementation("io.github.jan-tennert.supabase:postgrest-kt:2.4.0")
   implementation("io.github.jan-tennert.supabase:realtime-kt:2.4.0")
   implementation("io.github.jan-tennert.supabase:storage-kt:2.4.0")
-  implementation("io.ktor:ktor-client-cio:2.3.11")
+  implementation("io.ktor:ktor-client-okhttp:2.3.11")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)

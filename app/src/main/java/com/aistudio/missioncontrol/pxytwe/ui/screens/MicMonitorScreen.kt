@@ -65,7 +65,7 @@ fun MicMonitorScreen(
     }
     DisposableEffect(Unit) {
         onDispose {
-            vm.stop(sendCommand = false)
+            vm.stop(sendCommand = true)
         }
     }
 

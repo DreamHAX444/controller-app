@@ -1,8 +1,11 @@
 package com.aistudio.missioncontrol.pxytwe
 
+import android.util.Log
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 data class DeviceTelemetry(
     val name: String,
@@ -59,49 +62,56 @@ object AppState {
         EventLogger.initialize(context)
 
         appScope.launch {
-            // Load initial locations from DB (best-effort — don't block realtime)
-            try {
-                val initialLocs = SupabaseClientManager.getInitialLocations()
-                val fencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
-                val fences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(fencesStr)
-
-                initialLocs.forEach { initialLoc ->
-                    val dev = DeviceTelemetry(
-                        name = initialLoc.device_id,
-                        lat = initialLoc.latitude,
-                        lon = initialLoc.longitude,
-                        heading = initialLoc.bearing,
-                        battery = 100,
-                        speed = 0f,
-                        lastSeen = parseSupabaseDate(initialLoc.created_at)
-                    )
-                    activeDevices[dev.name] = dev
-                    
-                    val locGeo = org.osmdroid.util.GeoPoint(initialLoc.latitude, initialLoc.longitude)
-                    val currentZone = fences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
-                    if (currentZone != null) {
-                        deviceCurrentZones[dev.name] = currentZone
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-
-            // Connect to realtime with retry
+            // Ponytail: Combined retry loop for initial state and realtime.
+            // If the network is down (UnresolvedAddressException), we keep 
+            // exponential backoff until we can reach Supabase.
             var retryDelay = 2000L
             while (true) {
                 try {
+                    // 1. Fetch initial locations first to populate the map
+                    val initialLocs = SupabaseClientManager.getInitialLocations()
+                    val fencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
+                    val fences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(fencesStr)
+
+                    initialLocs.forEach { initialLoc ->
+                        val dev = DeviceTelemetry(
+                            name = initialLoc.device_id,
+                            lat = initialLoc.latitude,
+                            lon = initialLoc.longitude,
+                            heading = initialLoc.bearing,
+                            battery = 100,
+                            speed = 0f,
+                            lastSeen = parseSupabaseDate(initialLoc.created_at)
+                        )
+                        // Only add if we don't have it or if the new one is newer
+                        val existing = activeDevices[dev.name]
+                        if (existing == null || dev.lastSeen > existing.lastSeen) {
+                            activeDevices[dev.name] = dev
+                        }
+                        
+                        val locGeo = org.osmdroid.util.GeoPoint(initialLoc.latitude, initialLoc.longitude)
+                        val currentZone = fences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
+                        if (currentZone != null) {
+                            deviceCurrentZones[dev.name] = currentZone
+                        }
+                    }
+
+                    // 2. Connect to realtime
                     SupabaseClientManager.connectRealtime()
                     SupabaseClientManager.startListeningForPongs()
                     val locationsFlow = SupabaseClientManager.listenToLocations()
-                    // If we get here, we're connected — collect forever
+                    
+                    // Reset retry delay on success
+                    retryDelay = 2000L
+                    
+                    // Collect forever until flow ends or exception
                     locationsFlow.collect { loc ->
                         processLocationUpdate(loc.device_id, loc.latitude, loc.longitude, loc.bearing)
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("AppState", "Supabase sync failed, retrying in ${retryDelay}ms", e)
                     kotlinx.coroutines.delay(retryDelay)
                     retryDelay = (retryDelay * 2).coerceAtMost(30_000L)
                 }
@@ -109,49 +119,53 @@ object AppState {
         }
     }
 
-    private fun processLocationUpdate(deviceId: String, lat: Double, lon: Double, heading: Float) {
-        val existing = activeDevices[deviceId]
-        val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
-        newHistory.add(Pair(lat, lon))
-        
-        val updatedDev = DeviceTelemetry(
-            name = deviceId,
-            lat = lat,
-            lon = lon,
-            heading = heading,
-            battery = 100,
-            speed = 0f,
-            lastSeen = System.currentTimeMillis(),
-            history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
-            updateCount = (existing?.updateCount ?: 0) + 1,
-            locTimestamp = System.currentTimeMillis()
-        )
-        activeDevices[deviceId] = updatedDev
+    private suspend fun processLocationUpdate(deviceId: String, lat: Double, lon: Double, heading: Float) {
+        withContext(Dispatchers.Main) {
+            val existing = activeDevices[deviceId]
+            val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
+            newHistory.add(Pair(lat, lon))
+            
+            val updatedDev = DeviceTelemetry(
+                name = deviceId,
+                lat = lat,
+                lon = lon,
+                heading = heading,
+                battery = 100,
+                speed = 0f,
+                lastSeen = System.currentTimeMillis(),
+                history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
+                updateCount = (existing?.updateCount ?: 0) + 1,
+                locTimestamp = System.currentTimeMillis()
+            )
+            activeDevices[deviceId] = updatedDev
 
-        val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
-        val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
-        val locGeo = org.osmdroid.util.GeoPoint(lat, lon)
-        val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
-        val previousZone = deviceCurrentZones[deviceId]
-        
-        if (currentZone != previousZone) {
-            if (previousZone != null) {
-                EventLogger.logEvent(deviceId, "GEOFENCE_EXIT", "Exited $previousZone")
-            }
-            if (currentZone != null) {
-                EventLogger.logEvent(deviceId, "GEOFENCE_ENTER", "Entered $currentZone")
-                playSiren()
-            }
-            if (currentZone == null) {
-                deviceCurrentZones.remove(deviceId)
-            } else {
-                deviceCurrentZones[deviceId] = currentZone
+            val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
+            val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
+            val locGeo = org.osmdroid.util.GeoPoint(lat, lon)
+            val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
+            val previousZone = deviceCurrentZones[deviceId]
+            
+            if (currentZone != previousZone) {
+                if (previousZone != null) {
+                    EventLogger.logEvent(deviceId, "GEOFENCE_EXIT", "Exited $previousZone")
+                }
+                if (currentZone != null) {
+                    EventLogger.logEvent(deviceId, "GEOFENCE_ENTER", "Entered $currentZone")
+                    playSiren()
+                }
+                if (currentZone == null) {
+                    deviceCurrentZones.remove(deviceId)
+                } else {
+                    deviceCurrentZones[deviceId] = currentZone
+                }
             }
         }
     }
 
     fun injectDebugLocation(lat: Double, lon: Double) {
-        processLocationUpdate("DEBUG-DEV-1", lat, lon, 0f)
+        appScope.launch {
+            processLocationUpdate("DEBUG-DEV-1", lat, lon, 0f)
+        }
     }
 
     private fun parseSupabaseDate(dateString: String): Long {
