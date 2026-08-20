@@ -114,15 +114,6 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    
-                    val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route
-                    
-                    if (currentRoute != "pin_lock") {
-                        com.aistudio.missioncontrol.pxytwe.ui.screens.RealtimeStatusStrip(
-                            modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd)
-                        )
-                    }
                 }
             }
         }

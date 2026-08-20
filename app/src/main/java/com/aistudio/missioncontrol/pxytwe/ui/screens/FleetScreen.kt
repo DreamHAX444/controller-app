@@ -2,18 +2,21 @@ package com.aistudio.missioncontrol.pxytwe.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,11 +25,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerGreen
-import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerCyan
-import com.aistudio.missioncontrol.pxytwe.ui.theme.MapMarkerYellow
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,17 +39,100 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.aistudio.missioncontrol.pxytwe.AppState
+import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
+import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
+import com.aistudio.missioncontrol.pxytwe.ui.components.LocationOffBadge
+import com.aistudio.missioncontrol.pxytwe.ui.theme.*
 import com.aistudio.missioncontrol.pxytwe.utils.GeofenceData
 import com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
+
+fun getCardinalDirection(degrees: Float): String {
+    val normalized = ((degrees % 360) + 360) % 360
+    return when {
+        normalized >= 337.5 || normalized < 22.5 -> "N"
+        normalized < 67.5 -> "NE"
+        normalized < 112.5 -> "E"
+        normalized < 157.5 -> "SE"
+        normalized < 202.5 -> "S"
+        normalized < 247.5 -> "SW"
+        normalized < 292.5 -> "W"
+        else -> "NW"
+    }
+}
+
+@Composable
+fun DeviceTelemetryDetailsDialog(
+    telemetry: DeviceTelemetry,
+    onDismiss: () -> Unit
+) {
+    val diff = System.currentTimeMillis() - telemetry.lastSeen
+    val isLive = diff < 15000
+    val lastSeenText = when {
+        diff < 60000 -> "${diff / 1000}s ago"
+        diff < 3600000 -> "${diff / 60000}m ago"
+        else -> "${diff / 3600000}h ago"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "${telemetry.name.uppercase()} SPECS",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SpecRow("DEVICE ID", telemetry.name)
+                SpecRow("STATUS", if (isLive) "Active (Live • $lastSeenText)" else "Offline ($lastSeenText)")
+                SpecRow("COORDINATES", "%.5f, %.5f".format(telemetry.lat, telemetry.lon))
+                SpecRow("ALTITUDE", "%.1f m MSL".format(telemetry.altitude))
+                SpecRow("ACCURACY", "±%.1f m".format(telemetry.accuracy))
+                SpecRow("HEADING", "%.1f° %s".format(telemetry.heading, getCardinalDirection(telemetry.heading)))
+                SpecRow("TILT (PITCH/ROLL)", "%.1f° / %.1f°".format(telemetry.pitch, telemetry.roll))
+                if (telemetry.pressure > 0f) {
+                    SpecRow("PRESSURE", "%.1f hPa".format(telemetry.pressure))
+                }
+                SpecRow("NETWORK", "%d dBm • %s".format(telemetry.signal, telemetry.networkType))
+                SpecRow("BATTERY", "%d%%%s".format(telemetry.battery, if (telemetry.charging) " (Charging)" else ""))
+                SpecRow("PING / LATENCY", if (telemetry.ping >= 0) "${telemetry.ping} ms" else "Active")
+                SpecRow("UPDATE COUNT", "${telemetry.updateCount} pings")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CLOSE", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
+}
 
 @Composable
 fun FleetScreen(
@@ -57,12 +140,241 @@ fun FleetScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val sharedPrefs = remember { context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE) }
     
     var isDropdownExpanded by remember { mutableStateOf(false) }
-    val selectedDevice = com.aistudio.missioncontrol.pxytwe.AppState.selectedDevice.value ?: "All Devices"
+    val selectedDevice = AppState.selectedDevice.value ?: "All Devices"
     
     fun updateSelectedDevice(name: String) {
-        com.aistudio.missioncontrol.pxytwe.AppState.selectedDevice.value = if (name == "All Devices") null else name
+        AppState.selectedDevice.value = if (name == "All Devices") null else name
+    }
+
+    val startPoint = remember { GeoPoint(37.7749, -122.4194) }
+    val isDrawingGeofence = AppState.isDrawingGeofence
+    val isDebugMode = AppState.isDebugDeviceMode
+    val currentGeofencePoints = remember { mutableStateListOf<GeoPoint>() }
+    val savedGeofences = remember { 
+        val data = sharedPrefs.getString("saved_fences", "") ?: ""
+        mutableStateListOf(*GeofenceUtils.deserializeGeofences(data).toTypedArray()) 
+    }
+    val currentGeofenceColor = remember { mutableIntStateOf("#D4AF37".toColorInt()) }
+    val currentGeofenceName = remember { mutableStateOf("") }
+    val originalGeofencePoints = remember { mutableStateOf<List<GeoPoint>?>(null) }
+    val originalGeofenceName = remember { mutableStateOf("") }
+    val showDeleteConfirmation = remember { mutableStateOf(false) }
+    val showShutdownConfirmation = remember { mutableStateOf(false) }
+    val showDeviceDetailsDialog = remember { mutableStateOf(false) }
+    
+    data class MapDevice(val name: String, val point: GeoPoint, val color: Int, val heading: Float)
+
+    val activeMap = AppState.activeDevices
+    
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000)
+            currentTime = System.currentTimeMillis()
+        }
+    }
+    
+    val isAwake by remember(selectedDevice, currentTime) {
+        derivedStateOf {
+            if (selectedDevice == "All Devices") {
+                activeMap.values.any { currentTime - it.lastSeen < 15000 }
+            } else {
+                val dev = activeMap[selectedDevice]
+                dev != null && (currentTime - dev.lastSeen < 15000)
+            }
+        }
+    }
+
+    val devicesList = activeMap.values.mapIndexed { idx, dev ->
+        val color = when(idx % 3) {
+            0 -> MapMarkerGreen.toArgb()
+            1 -> MapMarkerCyan.toArgb()
+            else -> MapMarkerYellow.toArgb()
+        }
+        MapDevice(dev.name, GeoPoint(dev.lat, dev.lon), color, dev.heading)
+    }
+
+    val resources = context.resources
+    val mapView = remember {
+        MapView(context).apply {
+            setMultiTouchControls(true)
+            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+            controller.setZoom(15.0)
+            controller.setCenter(startPoint)
+            setTileSource(TileSourceFactory.MAPNIK)
+            
+            val inverseMatrix = android.graphics.ColorMatrix(floatArrayOf(
+                -1f, 0f, 0f, 0f, 255f,
+                0f, -1f, 0f, 0f, 255f,
+                0f, 0f, -1f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f
+            ))
+            val destinationColors = android.graphics.ColorMatrix().apply { setSaturation(0f) }
+            destinationColors.postConcat(inverseMatrix)
+            overlayManager.tilesOverlay.setColorFilter(android.graphics.ColorMatrixColorFilter(destinationColors))
+        }
+    }
+
+    // Lifecycle observer
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, mapView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onDetach()
+        }
+    }
+
+    // Overlays
+    val savedFencesOverlay = remember { FolderOverlay() }
+    val drawingOverlay = remember { FolderOverlay() }
+    val historyOverlay = remember { FolderOverlay() }
+    val devicesOverlay = remember { FolderOverlay() }
+    
+    // Directional Marker Bitmaps
+    val deviceBitmaps = remember(devicesList) {
+        devicesList.associate { device ->
+            val bitmap = createBitmap(100, 100, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            
+            // Outer glow ring
+            paint.color = device.color
+            paint.alpha = 60
+            paint.style = android.graphics.Paint.Style.FILL
+            canvas.drawCircle(50f, 50f, 44f, paint)
+
+            // Inner solid pointer
+            paint.color = device.color
+            paint.alpha = 255
+            val path = android.graphics.Path()
+            path.moveTo(50f, 12f)
+            path.lineTo(76f, 78f)
+            path.lineTo(50f, 64f)
+            path.lineTo(24f, 78f)
+            path.close()
+            canvas.drawPath(path, paint)
+            
+            // Core accent highlight
+            paint.color = android.graphics.Color.WHITE
+            val innerPath = android.graphics.Path()
+            innerPath.moveTo(50f, 26f)
+            innerPath.lineTo(66f, 70f)
+            innerPath.lineTo(50f, 60f)
+            innerPath.lineTo(34f, 70f)
+            innerPath.close()
+            canvas.drawPath(innerPath, paint)
+            
+            device.name to bitmap
+        }
+    }
+
+    val drawingPointBitmap = remember(currentGeofenceColor.intValue) {
+        val color = currentGeofenceColor.intValue
+        val bitmap = createBitmap(36, 36, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = color
+        paint.alpha = 60
+        canvas.drawCircle(18f, 18f, 18f, paint)
+        paint.alpha = 255
+        canvas.drawCircle(18f, 18f, 8f, paint)
+        bitmap
+    }
+
+    val createTextBitmap: (String, Int) -> android.graphics.Bitmap = { text, color ->
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.textSize = 28f
+        paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        paint.color = color
+        
+        val textBounds = android.graphics.Rect()
+        paint.getTextBounds(text, 0, text.length, textBounds)
+        
+        val paddingX = 20
+        val paddingY = 12
+        val width = textBounds.width() + paddingX * 2
+        val height = textBounds.height() + paddingY * 2
+        
+        val bitmap = createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        
+        val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        bgPaint.color = android.graphics.Color.argb(220, 20, 20, 20)
+        val rect = android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
+        canvas.drawRoundRect(rect, height / 2f, height / 2f, bgPaint)
+        
+        val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        borderPaint.style = android.graphics.Paint.Style.STROKE
+        borderPaint.strokeWidth = 3f
+        borderPaint.color = color
+        canvas.drawRoundRect(rect, height / 2f, height / 2f, borderPaint)
+        
+        canvas.drawText(text, paddingX.toFloat() - textBounds.left, paddingY.toFloat() - textBounds.top, paint)
+        bitmap
+    }
+
+    val geofencePointsList = currentGeofencePoints.toList()
+    val savedFencesList = savedGeofences.toList()
+
+    val geofenceLabelBitmaps = remember(savedFencesList) {
+        val cache = mutableMapOf<String, android.graphics.Bitmap>()
+        savedFencesList.forEach { fence ->
+            cache[fence.name] = createTextBitmap(fence.name, fence.colorArgb)
+        }
+        cache
+    }
+
+    fun frameMapSelection(targetDevice: String) {
+        mapView.post {
+            if (targetDevice == "All Devices") {
+                if (devicesList.isEmpty()) {
+                    mapView.controller.animateTo(startPoint, 15.0, 800L)
+                } else if (devicesList.size == 1) {
+                    mapView.controller.animateTo(devicesList.first().point, 17.0, 800L)
+                } else {
+                    val points = devicesList.map { it.point }
+                    val boundingBox = BoundingBox.fromGeoPoints(points)
+                    if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
+                        mapView.controller.animateTo(points.first(), 17.0, 800L)
+                    } else {
+                        val latDiff = boundingBox.latNorth - boundingBox.latSouth
+                        val lonDiff = boundingBox.lonEast - boundingBox.lonWest
+                        val paddingFactor = 0.25
+                        val paddedBox = BoundingBox(
+                            boundingBox.latNorth + latDiff * paddingFactor,
+                            boundingBox.lonEast + lonDiff * paddingFactor,
+                            boundingBox.latSouth - latDiff * paddingFactor,
+                            boundingBox.lonWest - lonDiff * paddingFactor
+                        )
+                        mapView.zoomToBoundingBox(paddedBox, true, 80)
+                    }
+                }
+            } else {
+                val device = devicesList.find { it.name == targetDevice }
+                if (device != null) {
+                    mapView.controller.animateTo(device.point, 17.0, 800L)
+                }
+            }
+        }
+    }
+
+    var hasInitialCentered by remember { mutableStateOf(false) }
+    LaunchedEffect(devicesList.isNotEmpty()) {
+        if (devicesList.isNotEmpty() && !hasInitialCentered) {
+            frameMapSelection(selectedDevice)
+            hasInitialCentered = true
+        }
     }
 
     Box(
@@ -70,233 +382,7 @@ fun FleetScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        val context = LocalContext.current
-        val sharedPrefs = remember { context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE) }
-        
-        val startPoint = remember { GeoPoint(37.7749, -122.4194) }
-        val isDrawingGeofence = com.aistudio.missioncontrol.pxytwe.AppState.isDrawingGeofence
-        val isDebugMode = com.aistudio.missioncontrol.pxytwe.AppState.isDebugDeviceMode
-        val currentGeofencePoints = remember { mutableStateListOf<GeoPoint>() }
-        val savedGeofences = remember { 
-            val data = sharedPrefs.getString("saved_fences", "") ?: ""
-            mutableStateListOf(*GeofenceUtils.deserializeGeofences(data).toTypedArray()) 
-        }
-        val currentGeofenceColor = remember { mutableIntStateOf("#D4AF37".toColorInt()) }
-        val currentGeofenceName = remember { mutableStateOf("") }
-        val originalGeofencePoints = remember { mutableStateOf<List<GeoPoint>?>(null) }
-        val originalGeofenceName = remember { mutableStateOf("") }
-        val showDeleteConfirmation = remember { mutableStateOf(false) }
-        val showShutdownConfirmation = remember { mutableStateOf(false) }
-        
-        data class MapDevice(val name: String, val point: GeoPoint, val color: Int, val heading: Float)
-
-        val activeMap = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices
-        
-        var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                currentTime = System.currentTimeMillis()
-            }
-        }
-        
-        val isAwake by remember(selectedDevice) {
-            derivedStateOf {
-                if (selectedDevice == "All Devices") {
-                    activeMap.values.any { currentTime - it.lastSeen < 15000 }
-                } else {
-                    val dev = activeMap[selectedDevice]
-                    dev != null && (currentTime - dev.lastSeen < 15000)
-                }
-            }
-        }
-        val devicesList = activeMap.values.mapIndexed { idx, dev ->
-            val color = when(idx % 3) {
-                0 -> MapMarkerGreen.toArgb()
-                1 -> MapMarkerCyan.toArgb()
-                else -> MapMarkerYellow.toArgb()
-            }
-            MapDevice(dev.name, GeoPoint(dev.lat, dev.lon), color, dev.heading)
-        }
-        val resources = context.resources
-        val mapView = remember {
-            MapView(context).apply {
-                setMultiTouchControls(true)
-                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-                controller.setZoom(15.0)
-                controller.setCenter(startPoint)
-                setTileSource(TileSourceFactory.MAPNIK)
-                
-                val inverseMatrix = android.graphics.ColorMatrix(floatArrayOf(
-                    -1f, 0f, 0f, 0f, 255f,
-                    0f, -1f, 0f, 0f, 255f,
-                    0f, 0f, -1f, 0f, 255f,
-                    0f, 0f, 0f, 1f, 0f
-                ))
-                val destinationColors = android.graphics.ColorMatrix().apply { setSaturation(0f) }
-                destinationColors.postConcat(inverseMatrix)
-                overlayManager.tilesOverlay.setColorFilter(android.graphics.ColorMatrixColorFilter(destinationColors))
-            }
-        }
-
-        // Handle MapView lifecycle
-        val lifecycleOwner = LocalLifecycleOwner.current
-        DisposableEffect(lifecycleOwner, mapView) {
-            val observer = LifecycleEventObserver { _, event ->
-                when (event) {
-                    Lifecycle.Event.ON_RESUME -> mapView.onResume()
-                    Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                    else -> {}
-                }
-            }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-                mapView.onDetach()
-            }
-        }
-
-        // Optimized Overlays - Create once and reuse
-        val savedFencesOverlay = remember { org.osmdroid.views.overlay.FolderOverlay() }
-        val drawingOverlay = remember { org.osmdroid.views.overlay.FolderOverlay() }
-        val historyOverlay = remember { org.osmdroid.views.overlay.FolderOverlay() }
-        val devicesOverlay = remember { org.osmdroid.views.overlay.FolderOverlay() }
-        
-        // Cache for device bitmaps
-        val deviceBitmaps = remember(devicesList) {
-            devicesList.associate { device ->
-                val bitmap = createBitmap(120, 120, android.graphics.Bitmap.Config.ARGB_8888)
-                val canvas = android.graphics.Canvas(bitmap)
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                
-                paint.color = device.color
-                paint.alpha = 255
-                paint.style = android.graphics.Paint.Style.FILL
-                val path = android.graphics.Path()
-                path.moveTo(60f, 25f)
-                path.lineTo(80f, 75f)
-                path.lineTo(60f, 65f)
-                path.lineTo(40f, 75f)
-                path.close()
-                canvas.drawPath(path, paint)
-                
-                paint.color = android.graphics.Color.WHITE
-                val innerPath = android.graphics.Path()
-                innerPath.moveTo(60f, 35f)
-                innerPath.lineTo(72f, 70f)
-                innerPath.lineTo(60f, 62f)
-                innerPath.lineTo(48f, 70f)
-                innerPath.close()
-                canvas.drawPath(innerPath, paint)
-                
-                device.name to bitmap
-            }
-        }
-
-        // Cache for drawing point bitmaps
-        val drawingPointBitmap = remember(currentGeofenceColor.intValue) {
-            val color = currentGeofenceColor.intValue
-            val bitmap = createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
-            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            paint.color = color
-            paint.alpha = 50
-            canvas.drawCircle(20f, 20f, 20f, paint)
-            paint.alpha = 255
-            canvas.drawCircle(20f, 20f, 10f, paint)
-            bitmap
-        }
-
-        // Cache for label text bitmaps
-        val createTextBitmap: (String, Int) -> android.graphics.Bitmap = { text, color ->
-            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            paint.textSize = 32f
-            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            paint.color = color
-            
-            val textBounds = android.graphics.Rect()
-            paint.getTextBounds(text, 0, text.length, textBounds)
-            
-            val paddingX = 24
-            val paddingY = 16
-            val width = textBounds.width() + paddingX * 2
-            val height = textBounds.height() + paddingY * 2
-            
-            val bitmap = createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
-            
-            // Draw background pill
-            val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            bgPaint.color = android.graphics.Color.argb(220, 25, 25, 25)
-            val rect = android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat())
-            canvas.drawRoundRect(rect, height / 2f, height / 2f, bgPaint)
-            
-            // Draw border
-            val borderPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            borderPaint.style = android.graphics.Paint.Style.STROKE
-            borderPaint.strokeWidth = 4f
-            borderPaint.color = color
-            canvas.drawRoundRect(rect, height / 2f, height / 2f, borderPaint)
-            
-            // Draw text
-            canvas.drawText(text, paddingX.toFloat() - textBounds.left, paddingY.toFloat() - textBounds.top, paint)
-            
-            bitmap
-        }
-        val geofencePointsList = currentGeofencePoints.toList()
-        val savedFencesList = savedGeofences.toList()
-
-        val geofenceLabelBitmaps = remember(savedFencesList) {
-            val cache = mutableMapOf<String, android.graphics.Bitmap>()
-            savedFencesList.forEach { fence ->
-                cache[fence.name] = createTextBitmap(fence.name, fence.colorArgb)
-            }
-            cache
-        }
-
-        fun frameMapSelection(targetDevice: String) {
-            mapView.post {
-                if (targetDevice == "All Devices") {
-                    if (devicesList.isEmpty()) {
-                        mapView.controller.animateTo(startPoint, 15.0, 1000L)
-                    } else if (devicesList.size == 1) {
-                        mapView.controller.animateTo(devicesList.first().point, 17.0, 1000L)
-                    } else {
-                        val points = devicesList.map { it.point }
-                        val boundingBox = org.osmdroid.util.BoundingBox.fromGeoPoints(points)
-                        if (boundingBox.latNorth == boundingBox.latSouth && boundingBox.lonEast == boundingBox.lonWest) {
-                            mapView.controller.animateTo(points.first(), 17.0, 1000L)
-                        } else {
-                            val latDiff = boundingBox.latNorth - boundingBox.latSouth
-                            val lonDiff = boundingBox.lonEast - boundingBox.lonWest
-                            val paddingFactor = 0.2
-                            val paddedBox = org.osmdroid.util.BoundingBox(
-                                boundingBox.latNorth + latDiff * paddingFactor,
-                                boundingBox.lonEast + lonDiff * paddingFactor,
-                                boundingBox.latSouth - latDiff * paddingFactor,
-                                boundingBox.lonWest - lonDiff * paddingFactor
-                            )
-                            mapView.zoomToBoundingBox(paddedBox, true, 100)
-                        }
-                    }
-                } else {
-                    val device = devicesList.find { it.name == targetDevice }
-                    if (device != null) {
-                        mapView.controller.animateTo(device.point, 17.0, 1000L)
-                    }
-                }
-            }
-        }
-
-        // Auto-center on first device if not already centered
-        var hasInitialCentered by remember { mutableStateOf(false) }
-        LaunchedEffect(devicesList.isNotEmpty()) {
-            if (devicesList.isNotEmpty() && !hasInitialCentered) {
-                frameMapSelection(selectedDevice)
-                hasInitialCentered = true
-            }
-        }
-
+        // Map Container
         AndroidView(
             factory = {
                 mapView.apply {
@@ -305,11 +391,10 @@ fun FleetScreen(
                     overlays.add(drawingOverlay)
                     overlays.add(devicesOverlay)
                     
-                    // Advanced dragging overlay: instant response, prevents map pan
                     val interactionOverlay = object : org.osmdroid.views.overlay.Overlay() {
                         var draggedIndex = -1
                         
-                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: org.osmdroid.views.MapView): Boolean {
+                        override fun onTouchEvent(event: android.view.MotionEvent, mapView: MapView): Boolean {
                             if (!isDrawingGeofence.value) return super.onTouchEvent(event, mapView)
                             
                             val proj = mapView.projection
@@ -325,7 +410,7 @@ fun FleetScreen(
                                         val dx = event.x - p.x
                                         val dy = event.y - p.y
                                         val dist = kotlin.math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-                                        if (dist < 100f && dist < minDistance) { // Generous hit radius
+                                        if (dist < 100f && dist < minDistance) {
                                             minDistance = dist
                                             closestIndex = i
                                         }
@@ -333,12 +418,11 @@ fun FleetScreen(
                                     if (closestIndex != -1) {
                                         draggedIndex = closestIndex
                                         mapView.parent?.requestDisallowInterceptTouchEvent(true)
-                                        return true // Consume touch, blocks map from panning
+                                        return true
                                     }
                                 }
                                 android.view.MotionEvent.ACTION_MOVE -> {
                                     if (draggedIndex != -1) {
-                                        // Live update shape and marker visually without triggering Compose
                                         val markers = drawingOverlay.items.filterIsInstance<Marker>()
                                         if (draggedIndex < markers.size) {
                                             markers[draggedIndex].position = tGeo
@@ -355,7 +439,6 @@ fun FleetScreen(
                                         val markers = drawingOverlay.items.filterIsInstance<Marker>()
                                         if (draggedIndex < markers.size) {
                                             val newPos = markers[draggedIndex].position
-                                            // This will trigger a recomposition and update our geofencePointsList
                                             currentGeofencePoints[draggedIndex] = GeoPoint(newPos.latitude, newPos.longitude)
                                         }
                                         draggedIndex = -1
@@ -373,7 +456,7 @@ fun FleetScreen(
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             if (p == null) return false
                             if (isDebugMode.value) {
-                                com.aistudio.missioncontrol.pxytwe.AppState.injectDebugLocation(p.latitude, p.longitude)
+                                AppState.injectDebugLocation(p.latitude, p.longitude)
                                 return true
                             }
                             if (isDrawingGeofence.value) {
@@ -407,24 +490,21 @@ fun FleetScreen(
                     overlays.add(MapEventsOverlay(mapEventsReceiver))
                 }
             },
-            update = { view ->
-                // Empty update block to prevent Compose recompositions from tearing down the overlays during interactions.
-                // Overlays are managed by LaunchedEffects below.
-            },
+            update = {},
             modifier = Modifier.fillMaxSize()
         )
 
-        // Sync Saved Fences
+        // Saved Fences sync
         LaunchedEffect(savedFencesList, isDrawingGeofence.value) {
             savedFencesOverlay.items.clear()
             savedFencesList.forEach { fenceData ->
                 val polygon = Polygon()
                 polygon.points = fenceData.points
-                polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 30)
+                polygon.fillPaint.color = ColorUtils.setAlphaComponent(fenceData.colorArgb, 35)
                 polygon.outlinePaint.color = fenceData.colorArgb
-                polygon.outlinePaint.strokeWidth = 6f
-                polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(30f, 15f), 0f)
-                polygon.outlinePaint.setShadowLayer(15f, 0f, 0f, fenceData.colorArgb)
+                polygon.outlinePaint.strokeWidth = 5f
+                polygon.outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(24f, 12f), 0f)
+                polygon.outlinePaint.setShadowLayer(12f, 0f, 0f, fenceData.colorArgb)
                 savedFencesOverlay.add(polygon)
 
                 if (!isDrawingGeofence.value) {
@@ -441,7 +521,7 @@ fun FleetScreen(
             mapView.invalidate()
         }
 
-        // Sync Devices and History
+        // Devices & Breadcrumbs sync
         LaunchedEffect(devicesList, selectedDevice) {
             historyOverlay.items.clear()
             devicesOverlay.items.clear()
@@ -452,7 +532,7 @@ fun FleetScreen(
                     if (dev.history.size >= 2) {
                         val polyline = Polyline()
                         polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
-                        polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 100)
+                        polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 120)
                         polyline.outlinePaint.strokeWidth = 4f
                         historyOverlay.add(polyline)
                     }
@@ -478,7 +558,7 @@ fun FleetScreen(
             mapView.invalidate()
         }
 
-        // Sync Drawing Geofence
+        // Drawing Geofence sync
         LaunchedEffect(geofencePointsList, currentGeofenceColor.intValue, isDrawingGeofence.value) {
             drawingOverlay.items.clear()
             if (isDrawingGeofence.value && geofencePointsList.isNotEmpty()) {
@@ -486,15 +566,15 @@ fun FleetScreen(
                 if (geofencePointsList.size >= 3) {
                     val polygon = Polygon()
                     polygon.points = geofencePointsList
-                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 80)
+                    polygon.fillPaint.color = ColorUtils.setAlphaComponent(activeColor, 75)
                     polygon.outlinePaint.color = activeColor
-                    polygon.outlinePaint.strokeWidth = 6f
+                    polygon.outlinePaint.strokeWidth = 5f
                     drawingOverlay.add(polygon)
                 } else if (geofencePointsList.size == 2) {
                     val polyline = Polyline()
                     polyline.setPoints(geofencePointsList)
                     polyline.outlinePaint.color = activeColor
-                    polyline.outlinePaint.strokeWidth = 6f
+                    polyline.outlinePaint.strokeWidth = 5f
                     drawingOverlay.add(polyline)
                 }
 
@@ -509,201 +589,196 @@ fun FleetScreen(
             }
             mapView.invalidate()
         }
-        
+
+        // Subtle gradient vignette overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        0.6f to Color.Transparent,
-                        1.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.9f)
+                        0.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.45f),
+                        0.15f to Color.Transparent,
+                        0.70f to Color.Transparent,
+                        1.0f to MaterialTheme.colorScheme.background.copy(alpha = 0.88f)
                     )
                 )
         )
 
-        // Debug Device Floating Button
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        ) {
-            FloatingActionButton(
-                onClick = { 
-                    isDebugMode.value = !isDebugMode.value
-                    if (isDebugMode.value) {
-                        isDrawingGeofence.value = false
-                    }
-                },
-                containerColor = if (isDebugMode.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-                contentColor = if (isDebugMode.value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = if (isDrawingGeofence.value) 80.dp else 0.dp)
-            ) {
-                Icon(Icons.Default.BugReport, contentDescription = "Debug Mode")
-            }
-        }
-
-        if (devicesList.isEmpty() && !isDrawingGeofence.value && !isDebugMode.value) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                shadowElevation = 12.dp,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(24.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Default.Radar,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "SEARCHING FOR TARGET DEVICES...",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        letterSpacing = 1.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Open and start the Live Tracker app on a target device to connect.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // Floating Header Pill (Fleet Selector)
+        // ═════════════════════════════════════════════════════════════════════
+        // 1. TOP FLOATING DYNAMIC ISLAND (Fleet Selector & Connection HUD)
+        // ═════════════════════════════════════════════════════════════════════
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                 .align(Alignment.TopCenter),
             contentAlignment = Alignment.TopCenter
         ) {
             AnimatedVisibility(
                 visible = !isDrawingGeofence.value,
-                enter = slideInVertically(
-                    initialOffsetY = { -it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeIn(),
-                exit = slideOutVertically(
-                    targetOffsetY = { -it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeOut()
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(24.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                            shadowElevation = 8.dp,
-                            modifier = Modifier
-                                .clickable { isDropdownExpanded = !isDropdownExpanded }
+                    val activeDeviceTelemetry = if (selectedDevice != "All Devices") activeMap[selectedDevice] else null
+                    val activeDiff = if (activeDeviceTelemetry != null) currentTime - activeDeviceTelemetry.lastSeen else 0L
+                    val activeLive = activeDeviceTelemetry != null && activeDiff < 15000
+                    val activeSeenText = when {
+                        activeDiff < 60000 -> "${activeDiff / 1000}s ago"
+                        activeDiff < 3600000 -> "${activeDiff / 60000}m ago"
+                        else -> "${activeDiff / 3600000}h ago"
+                    }
+
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .widthIn(max = 340.dp)
+                            .clickable { isDropdownExpanded = !isDropdownExpanded }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val dotColor = if (isAwake) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(dotColor)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                            // Pulsing live dot
+                            val transition = rememberInfiniteTransition(label = "pulse_top")
+                            val pulseAlpha by transition.animateFloat(
+                                initialValue = 0.4f,
+                                targetValue = 1f,
+                                animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
+                                label = "pulse_top_alpha"
+                            )
+                            val dotColor = if (isAwake) Color(0xFF4ADE80).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                            
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(dotColor)
+                            )
+                            
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            Text(
+                                text = if (selectedDevice == "All Devices") "ALL TRACKERS (${devicesList.size})" else selectedDevice.uppercase(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                softWrap = false,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+
+                            if (activeDeviceTelemetry != null) {
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (selectedDevice == "All Devices") "ALL DEVICES (${devicesList.size})" else selectedDevice.uppercase(),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f, fill = false),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val rotation by animateFloatAsState(
-                                    targetValue = if (isDropdownExpanded) 180f else 0f,
-                                    label = "dropdown_rotation"
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp).rotate(rotation),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "• $activeSeenText",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (activeLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    softWrap = false
                                 )
                             }
+                            
+                            Spacer(modifier = Modifier.width(6.dp))
+                            
+                            val rotation by animateFloatAsState(targetValue = if (isDropdownExpanded) 180f else 0f, label = "dropdown_icon")
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp).rotate(rotation),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-
-
                     }
-                    
+
+                    // Dropdown Menu Sheet
                     AnimatedVisibility(
                         visible = isDropdownExpanded,
-                        enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                        exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                            shadowElevation = 12.dp,
                             modifier = Modifier
-                                .widthIn(max = 240.dp)
+                                .widthIn(max = 320.dp)
                                 .padding(top = 8.dp)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                val devices = listOf("All Devices") + devicesList.map { it.name }
-                                devices.forEach { deviceName ->
-                                    val isSelected = selectedDevice == deviceName
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                val allOptions = listOf("All Devices") + devicesList.map { it.name }
+                                allOptions.forEach { name ->
+                                    val isSelected = selectedDevice == name
+                                    val devTelemetry = activeMap[name]
+                                    val devDiff = if (devTelemetry != null) currentTime - devTelemetry.lastSeen else 0L
+                                    val devLive = if (name == "All Devices") {
+                                        activeMap.values.any { currentTime - it.lastSeen < 15000 }
+                                    } else {
+                                        devTelemetry != null && devDiff < 15000
+                                    }
+                                    val seenStr = when {
+                                        devDiff < 60000 -> "${devDiff / 1000}s ago"
+                                        devDiff < 3600000 -> "${devDiff / 60000}m ago"
+                                        else -> "${devDiff / 3600000}h ago"
+                                    }
+
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(RoundedCornerShape(12.dp))
                                             .clickable {
-                                                updateSelectedDevice(deviceName)
+                                                updateSelectedDevice(name)
                                                 isDropdownExpanded = false
-                                                frameMapSelection(deviceName)
+                                                frameMapSelection(name)
                                             }
-                                            .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha=0.5f) else Color.Transparent)
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        val deviceIsLive = if (deviceName == "All Devices") {
-                                            activeMap.values.any { currentTime - it.lastSeen < 15000 }
-                                        } else {
-                                            val dev = activeMap[deviceName]
-                                            dev != null && (currentTime - dev.lastSeen < 15000)
-                                        }
-                                        val itemDotColor = if (deviceIsLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(itemDotColor)
+                                                .background(if (devLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                                         )
-                                        Spacer(modifier = Modifier.width(16.dp))
-                                        Text(
-                                            text = deviceName.uppercase(),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                            fontSize = 14.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = name.uppercase(),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                softWrap = false
+                                            )
+                                            if (devTelemetry != null) {
+                                                Text(
+                                                    text = if (devLive) "Live • $seenStr" else "Offline • $seenStr",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (devLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                        if (devTelemetry != null && devTelemetry.battery > 0) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "${devTelemetry.battery}%",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontFamily = FontFamily.Monospace,
+                                                softWrap = false
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -712,66 +787,499 @@ fun FleetScreen(
                 }
             }
         }
-        
-        if (showDeleteConfirmation.value) {
-            AlertDialog(
-                containerColor = MaterialTheme.colorScheme.surface,
-                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                onDismissRequest = { showDeleteConfirmation.value = false },
-                title = { Text("Delete Geofence?") },
-                text = { Text("This action cannot be undone. Are you sure you want to remove this zone?") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            originalGeofencePoints.value = null
-                            currentGeofencePoints.clear()
-                            currentGeofenceName.value = ""
-                            isDrawingGeofence.value = false
-                            showDeleteConfirmation.value = false
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+
+        // ═════════════════════════════════════════════════════════════════════
+        // 2. RIGHT MICRO ACTION DOCK (Floating Tool Capsule)
+        // ═════════════════════════════════════════════════════════════════════
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(y = (-30).dp)
+                .padding(end = 16.dp)
+        ) {
+            AnimatedVisibility(
+                visible = !isDrawingGeofence.value,
+                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+                exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    shadowElevation = 6.dp
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(vertical = 4.dp)
                     ) {
-                        Text("DELETE")
+                        // Focus / Recenter Button
+                        IconButton(
+                            onClick = { frameMapSelection(selectedDevice) },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.MyLocation,
+                                contentDescription = "Center Map",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.width(20.dp).padding(vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+
+                        // Geofence Mode Button
+                        IconButton(
+                            onClick = { 
+                                isDrawingGeofence.value = true
+                                originalGeofencePoints.value = null
+                                currentGeofencePoints.clear()
+                                currentGeofenceName.value = ""
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AddLocationAlt,
+                                contentDescription = "Draw Zone",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.width(20.dp).padding(vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+
+                        // Sleep / Wake Tracker Button
+                        val anyDeviceActive = if (selectedDevice == "All Devices") {
+                            activeMap.values.any { currentTime - it.lastSeen < 60000 }
+                        } else {
+                            val lastSeen = activeMap[selectedDevice]?.lastSeen ?: 0L
+                            currentTime - lastSeen < 60000
+                        }
+                        IconButton(
+                            onClick = { showShutdownConfirmation.value = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (anyDeviceActive) Icons.Default.PowerSettingsNew else Icons.Default.WbSunny,
+                                contentDescription = if (anyDeviceActive) "Sleep Trackers" else "Wake Trackers",
+                                tint = if (anyDeviceActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.width(20.dp).padding(vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+
+                        // Debug Injector Toggle
+                        IconButton(
+                            onClick = { isDebugMode.value = !isDebugMode.value },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.BugReport,
+                                contentDescription = "Debug Mode",
+                                tint = if (isDebugMode.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirmation.value = false }) {
-                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                shape = RoundedCornerShape(28.dp)
-            )
+                }
+            }
         }
 
+        // ═════════════════════════════════════════════════════════════════════
+        // 3. BOTTOM COMPACT BENTO TELEMETRY HUD (When Specific Device Selected)
+        // ═════════════════════════════════════════════════════════════════════
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
                 .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 82.dp)
+        ) {
+            AnimatedVisibility(
+                visible = selectedDevice != "All Devices" && !isDrawingGeofence.value,
+                enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+            ) {
+                val currentTelemetry = activeMap[selectedDevice]
+                val diff = currentTime - (currentTelemetry?.lastSeen ?: 0L)
+                val isLive = currentTelemetry != null && diff < 15000
+                val lastSeenText = when {
+                    diff < 60000 -> "${diff / 1000}s ago"
+                    diff < 3600000 -> "${diff / 60000}m ago"
+                    else -> "${diff / 3600000}h ago"
+                }
+                val headingVal = currentTelemetry?.heading ?: 0f
+                val cardinal = getCardinalDirection(headingVal)
+                val headingText = "${headingVal.toInt()}° $cardinal"
+
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                    shadowElevation = 12.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        // Top Header Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Left Identity Column: Line 1 = Name, Line 2 = Status & Heading Badges
+                            Column(
+                                modifier = Modifier.weight(1f, fill = false),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                // Row 1: Pulsing Live Dot + Device Name
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = selectedDevice.uppercase(),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 0.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        softWrap = false
+                                    )
+                                }
+
+                                // Row 2: Status Tag (Live/Seen x ago) + Compass Heading Badge + GPS Badge
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Live / Seen X ago Pill
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isLive) Color(0xFF4ADE80).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(5.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isLive) "LIVE • $lastSeenText" else "OFFLINE • $lastSeenText",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp,
+                                                color = if (isLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+
+                                    // Heading Badge
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Navigation,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(9.dp).rotate(headingVal),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = headingText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 9.sp,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+
+                                    if (currentTelemetry?.isLocationOn == false) {
+                                        LocationOffBadge()
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Right Action Buttons
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // Details Info Sheet Button
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(34.dp).clickable { showDeviceDetailsDialog.value = true }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Info, contentDescription = "Specs", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+
+                                // Location Toggle Button
+                                Surface(
+                                    shape = CircleShape,
+                                    color = if (currentTelemetry?.isLocationOn == false) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(34.dp).clickable {
+                                        scope.launch {
+                                            try {
+                                                SupabaseClientManager.sendEnableLocationCommand(selectedDevice)
+                                                android.widget.Toast.makeText(context, "Location signal sent to $selectedDevice", android.widget.Toast.LENGTH_SHORT).show()
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "Failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (currentTelemetry?.isLocationOn == false) Icons.Filled.LocationOff else Icons.Filled.LocationOn,
+                                            contentDescription = "Location Toggle",
+                                            tint = if (currentTelemetry?.isLocationOn == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Live Mic Listener Button
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(34.dp).clickable { onNavigateToMicMonitor(selectedDevice) }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Mic, contentDescription = "Mic Monitor", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Compact Bento Metric Row
+                        val speedText = currentTelemetry?.let { "%.1f km/h".format(it.speed) } ?: "0.0 km/h"
+                        val batteryVal = currentTelemetry?.battery ?: 100
+                        val batteryText = "$batteryVal%" + if (currentTelemetry?.charging == true) " ⚡" else ""
+                        val signalText = currentTelemetry?.let { "${it.signal} dBm" } ?: "-85 dBm"
+                        val networkType = currentTelemetry?.networkType ?: "4G"
+                        val currentZoneText = currentTelemetry?.let { telemetry ->
+                            val pt = GeoPoint(telemetry.lat, telemetry.lon)
+                            val zone = savedFencesList.find { GeofenceUtils.isPointInPolygon(pt, it.points) }
+                            zone?.name?.uppercase() ?: "NO ZONE"
+                        } ?: "NO ZONE"
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            CompactMetricChip(
+                                label = "BATTERY",
+                                value = batteryText,
+                                icon = if (currentTelemetry?.charging == true) Icons.Default.Bolt else Icons.Default.BatteryStd,
+                                highlightColor = if (batteryVal < 20) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            CompactMetricChip(
+                                label = "SPEED",
+                                value = speedText,
+                                icon = Icons.Default.Speed,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            CompactMetricChip(
+                                label = networkType,
+                                value = signalText,
+                                icon = Icons.Default.SignalCellularAlt,
+                                modifier = Modifier.weight(1.1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            CompactMetricChip(
+                                label = "ZONE",
+                                value = currentZoneText,
+                                icon = Icons.Default.Place,
+                                modifier = Modifier.weight(1.1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // 4. FLEET QUICK-SWITCH STRIP (When "All Devices" is Selected)
+        // ═════════════════════════════════════════════════════════════════════
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 82.dp)
+        ) {
+            AnimatedVisibility(
+                visible = selectedDevice == "All Devices" && !isDrawingGeofence.value,
+                enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut()
+            ) {
+                if (devicesList.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            devicesList.forEach { dev ->
+                                val telemetry = activeMap[dev.name]
+                                val devDiff = if (telemetry != null) currentTime - telemetry.lastSeen else 0L
+                                val devLive = telemetry != null && devDiff < 15000
+                                val devSeen = when {
+                                    devDiff < 60000 -> "${devDiff / 1000}s ago"
+                                    devDiff < 3600000 -> "${devDiff / 60000}m ago"
+                                    else -> "${devDiff / 3600000}h ago"
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                                    modifier = Modifier.clickable {
+                                        updateSelectedDevice(dev.name)
+                                        frameMapSelection(dev.name)
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (devLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column {
+                                            Text(
+                                                text = dev.name.uppercase(),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                softWrap = false
+                                            )
+                                            Text(
+                                                text = if (devLive) "Live • $devSeen" else "Off • $devSeen",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (devLive) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 9.sp,
+                                                softWrap = false
+                                            )
+                                        }
+                                        if (telemetry != null) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "${telemetry.battery}%",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontFamily = FontFamily.Monospace,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (!isDebugMode.value) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                        shadowElevation = 6.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Radar, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "SCANNING FOR ACTIVE TRACKERS...",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // 5. SLIM GEOFENCE DRAWING BAR (Zone Creation / Edit Mode)
+        // ═════════════════════════════════════════════════════════════════════
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
         ) {
             AnimatedVisibility(
                 visible = isDrawingGeofence.value,
-                enter = slideInVertically(
-                    initialOffsetY = { it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeIn(),
-                exit = slideOutVertically(
-                    targetOffsetY = { it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeOut()
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                    shadowElevation = 16.dp,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    shadowElevation = 14.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                        // Header info
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -781,58 +1289,48 @@ fun FleetScreen(
                                 Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (originalGeofencePoints.value != null) "EDIT ZONE" else "NEW ZONE", 
+                                    text = if (originalGeofencePoints.value != null) "EDIT ZONE" else "DRAW NEW ZONE", 
                                     style = MaterialTheme.typography.titleSmall, 
                                     color = MaterialTheme.colorScheme.onSurface, 
-                                    letterSpacing = 1.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
                                 )
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (currentGeofencePoints.size >= 3) {
-                                    val currentAreaSqM = remember(currentGeofencePoints.size) {
-                                        GeofenceUtils.calculateArea(currentGeofencePoints.toList())
-                                    }
-                                    val formattedArea = if (currentAreaSqM > 1000000) {
-                                        String.format(java.util.Locale.US, "%.2f sq km", currentAreaSqM / 1000000)
-                                    } else {
-                                        String.format(java.util.Locale.US, "%.0f sq m", currentAreaSqM)
-                                    }
+                                    val areaSqM = GeofenceUtils.calculateArea(currentGeofencePoints.toList())
+                                    val areaFormatted = if (areaSqM > 1000000) "%.2f km²".format(areaSqM / 1000000) else "%.0f m²".format(areaSqM)
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
                                     ) {
                                         Text(
-                                            text = formattedArea,
-                                            style = MaterialTheme.typography.labelMedium,
+                                            text = areaFormatted,
+                                            style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.secondary,
                                             fontWeight = FontWeight.Bold,
-                                            letterSpacing = 1.sp,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
-
                                 Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                                 ) {
                                     Text(
                                         text = if (currentGeofencePoints.size < 3) "TAP MAP (MIN 3)" else "${currentGeofencePoints.size} PTS",
-                                        style = MaterialTheme.typography.labelMedium,
+                                        style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.ExtraBold,
-                                        letterSpacing = 1.sp,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
+                        // Name field and Color presets
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -840,11 +1338,9 @@ fun FleetScreen(
                             OutlinedTextField(
                                 value = currentGeofenceName.value,
                                 onValueChange = { currentGeofenceName.value = it },
-                                placeholder = { Text("Zone Name", style = MaterialTheme.typography.bodySmall) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
+                                placeholder = { Text("Zone Name (e.g. Warehouse)", style = MaterialTheme.typography.bodySmall) },
+                                modifier = Modifier.weight(1f).height(44.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 singleLine = true,
                                 textStyle = MaterialTheme.typography.bodyMedium,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -853,63 +1349,53 @@ fun FleetScreen(
                                 )
                             )
                             
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                val luxuryColors = listOf(
-                                    "#D4AF37".toColorInt(), // Gold
-                                    "#0F52BA".toColorInt(), // Sapphire
-                                    "#9B111E".toColorInt(), // Ruby
-                                    "#50C878".toColorInt()  // Emerald
-                                )
+                            val luxuryColors = listOf(
+                                "#D4AF37".toColorInt(), // Gold
+                                "#0F52BA".toColorInt(), // Sapphire
+                                "#9B111E".toColorInt(), // Ruby
+                                "#50C878".toColorInt()  // Emerald
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 luxuryColors.forEach { color ->
                                     Box(
                                         modifier = Modifier
-                                            .size(48.dp)
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(color))
                                             .clickable { currentGeofenceColor.intValue = color },
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(color))
-                                                .border(
-                                                    width = if (currentGeofenceColor.intValue == color) 2.dp else 0.dp,
-                                                    color = if (currentGeofenceColor.intValue == color) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                                    shape = CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (currentGeofenceColor.intValue == color) {
-                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                            }
+                                        if (currentGeofenceColor.intValue == color) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                         }
                                     }
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
+                        // Action Buttons
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(38.dp)
                                     .clickable(enabled = currentGeofencePoints.isNotEmpty()) {
                                         if (currentGeofencePoints.isNotEmpty()) currentGeofencePoints.removeAt(currentGeofencePoints.lastIndex)
-                                    },
+                                    }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.Undo,
                                         contentDescription = "Undo",
-                                        modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(18.dp),
                                         tint = if (currentGeofencePoints.isNotEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                                     )
                                 }
@@ -917,19 +1403,12 @@ fun FleetScreen(
                             
                             if (originalGeofencePoints.value != null) {
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = MaterialTheme.colorScheme.errorContainer,
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clickable { showDeleteConfirmation.value = true },
+                                    modifier = Modifier.size(38.dp).clickable { showDeleteConfirmation.value = true }
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Delete",
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.onErrorContainer
-                                        )
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onErrorContainer)
                                     }
                                 }
                             }
@@ -945,11 +1424,11 @@ fun FleetScreen(
                                     currentGeofenceName.value = ""
                                     isDrawingGeofence.value = false
                                 },
-                                modifier = Modifier.weight(1f).height(40.dp),
-                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(0.dp)
                             ) {
-                                Text("CANCEL", style = MaterialTheme.typography.labelMedium)
+                                Text("CANCEL", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             }
                             
                             Button(
@@ -965,12 +1444,12 @@ fun FleetScreen(
                                     }
                                 },
                                 enabled = currentGeofencePoints.size >= 3,
-                                modifier = Modifier.weight(1f).height(40.dp),
-                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(38.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(0.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
-                                Text("SAVE", style = MaterialTheme.typography.labelMedium)
+                                Text("SAVE ZONE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -978,216 +1457,74 @@ fun FleetScreen(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(y = (-64).dp)
-                .padding(end = 16.dp)
-        ) {
-            AnimatedVisibility(
-                visible = !isDrawingGeofence.value,
-                enter = slideInHorizontally(
-                    initialOffsetX = { it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeIn(),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { it }, 
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
-                ) + fadeOut()
-            ) {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.75f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                        shadowElevation = 0.dp
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        ) {
-                        IconButton(onClick = { 
-                            isDrawingGeofence.value = true
+        // Technical Specs Sheet Dialog
+        if (showDeviceDetailsDialog.value && selectedDevice != "All Devices") {
+            val telemetry = activeMap[selectedDevice]
+            if (telemetry != null) {
+                DeviceTelemetryDetailsDialog(
+                    telemetry = telemetry,
+                    onDismiss = { showDeviceDetailsDialog.value = false }
+                )
+            }
+        }
+
+        // Delete Geofence Dialog
+        if (showDeleteConfirmation.value) {
+            AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                onDismissRequest = { showDeleteConfirmation.value = false },
+                title = { Text("Delete Geofence?", fontWeight = FontWeight.Bold) },
+                text = { Text("Are you sure you want to remove this safety zone?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
                             originalGeofencePoints.value = null
                             currentGeofencePoints.clear()
                             currentGeofenceName.value = ""
-                        }) {
-                            Icon(Icons.Default.AddLocationAlt, contentDescription = "New Geofence", tint = if (isDrawingGeofence.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        IconButton(onClick = { 
-                            frameMapSelection(selectedDevice)
-                        }) {
-                            Icon(Icons.Default.MyLocation, contentDescription = "My Location", tint = MaterialTheme.colorScheme.primary)
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.width(24.dp).padding(vertical = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                        )
-                        val anyDeviceActive = if (selectedDevice == "All Devices") {
-                            activeMap.values.any { System.currentTimeMillis() - it.lastSeen < 60000 }
-                        } else {
-                            val lastSeen = activeMap[selectedDevice]?.lastSeen ?: 0L
-                            System.currentTimeMillis() - lastSeen < 60000
-                        }
-                        IconButton(onClick = { 
-                            showShutdownConfirmation.value = true
-                        }) {
-                            Icon(
-                                if (anyDeviceActive) Icons.Default.PowerSettingsNew else Icons.Default.WbSunny, 
-                                contentDescription = if (anyDeviceActive) "Sleep Trackers" else "Wake Trackers", 
-                                tint = if (anyDeviceActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                            )
-                        }
+                            isDrawingGeofence.value = false
+                            showDeleteConfirmation.value = false
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("DELETE", fontWeight = FontWeight.Bold)
                     }
-                }
-            }
-        }
-        
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 112.dp)
-        ) {
-            AnimatedVisibility(
-                visible = selectedDevice != "All Devices" && !isDrawingGeofence.value,
-                enter = slideInVertically(
-                    initialOffsetY = { it / 2 },
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
-                ) + fadeIn(),
-                exit = slideOutVertically(
-                    targetOffsetY = { it / 2 },
-                    animationSpec = tween(200)
-                ) + fadeOut()
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(32.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                        val currentTelemetry = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices[selectedDevice]
-                        
-                        val lastSeenText = currentTelemetry?.let {
-                            val diff = currentTime - it.lastSeen
-                            if (diff < 60000) "${diff / 1000}s AGO"
-                            else "${diff / 60000}m AGO"
-                        } ?: "UNKNOWN"
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                val isLive = currentTelemetry != null && (currentTime - currentTelemetry.lastSeen < 15000)
-                                val transition = rememberInfiniteTransition(label = "pulse")
-                                val dotAlpha by transition.animateFloat(
-                                    initialValue = 0.4f,
-                                    targetValue = if (isLive) 1f else 0.4f,
-                                    animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
-                                    label = "dot_alpha"
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isLive) Color(0xFF4ADE80).copy(alpha = dotAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = selectedDevice.uppercase(),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 1.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f))
-                            ) {
-                                Text(
-                                    text = lastSeenText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.tertiary,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        val speedText = currentTelemetry?.let { String.format(java.util.Locale.US, "%.1f km/h", it.speed) } ?: "N/A"
-                        val batteryText = currentTelemetry?.let { "${it.battery}%" + if (it.charging) " (AC)" else "" } ?: "N/A"
-                        val signalText = currentTelemetry?.let { "${it.signal} dBm" } ?: "N/A"
-                        val currentZoneText = currentTelemetry?.let { telemetry ->
-                            val pt = GeoPoint(telemetry.lat, telemetry.lon)
-                            val zone = savedFencesList.find { GeofenceUtils.isPointInPolygon(pt, it.points) }
-                            zone?.name?.uppercase() ?: "NONE"
-                        } ?: "UNKNOWN"
-                        
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            HUDDataBlock("SPEED", speedText, modifier = Modifier.weight(1f))
-                            HUDDataBlock("BATTERY", batteryText, modifier = Modifier.weight(1f))
-                            HUDDataBlock("ZONE", currentZoneText, modifier = Modifier.weight(1f))
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        val pingText = currentTelemetry?.let {
-                            if (it.ping >= 0) "${it.ping} ms" else "..."
-                        } ?: "N/A"
-                        
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            HUDDataBlock("SIGNAL", signalText, modifier = Modifier.weight(1f))
-                            HUDDataBlock("PING", pingText, modifier = Modifier.weight(1f))
-                            
-                            // Microphone Button
-                            IconButton(
-                                onClick = { onNavigateToMicMonitor(selectedDevice) },
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                ),
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .shadow(8.dp, CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Mic Monitor",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirmation.value = false }) {
+                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                }
-            }
+                },
+                shape = RoundedCornerShape(24.dp)
+            )
         }
 
+        // Sleep / Wake Confirmation Dialog
         if (showShutdownConfirmation.value) {
             val anyDeviceActive = if (selectedDevice == "All Devices") {
-                activeMap.values.any { System.currentTimeMillis() - it.lastSeen < 60000 }
+                activeMap.values.any { currentTime - it.lastSeen < 60000 }
             } else {
                 val lastSeen = activeMap[selectedDevice]?.lastSeen ?: 0L
-                System.currentTimeMillis() - lastSeen < 60000
+                currentTime - lastSeen < 60000
             }
             AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
                 onDismissRequest = { showShutdownConfirmation.value = false },
-                title = { Text(if (anyDeviceActive) "Sleep ${if (selectedDevice == "All Devices") "All Trackers" else selectedDevice}?" else "Wake ${if (selectedDevice == "All Devices") "All Trackers" else selectedDevice}?", fontWeight = FontWeight.Bold) },
-                text = { Text(if (anyDeviceActive) "This will put ${if (selectedDevice == "All Devices") "all tracking devices" else selectedDevice} to sleep to save battery." else "This will wake ${if (selectedDevice == "All Devices") "all tracking devices" else selectedDevice} and resume location tracking.") },
+                title = {
+                    Text(
+                        if (anyDeviceActive) "Sleep ${if (selectedDevice == "All Devices") "All Trackers" else selectedDevice}?" 
+                        else "Wake ${if (selectedDevice == "All Devices") "All Trackers" else selectedDevice}?",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        if (anyDeviceActive) "Put trackers to low-power sleep mode to save battery."
+                        else "Send wake-up signal to resume live real-time tracking."
+                    )
+                },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -1195,95 +1532,129 @@ fun FleetScreen(
                                 if (selectedDevice != "All Devices") {
                                     val previousLastSeen = activeMap[selectedDevice]?.lastSeen ?: 0L
                                     if (anyDeviceActive) {
-                                        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.sendSleepCommand(selectedDevice)
+                                        SupabaseClientManager.sendSleepCommand(selectedDevice)
                                     } else {
-                                        com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.sendWakeCommand(selectedDevice)
+                                        SupabaseClientManager.sendWakeCommand(selectedDevice)
                                         var success = false
                                         for (i in 1..10) {
-                                            kotlinx.coroutines.delay(1000)
-                                            val currentDevice = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices[selectedDevice]
+                                            delay(1000)
+                                            val currentDevice = AppState.activeDevices[selectedDevice]
                                             if (currentDevice != null && currentDevice.lastSeen > previousLastSeen) {
                                                 success = true
                                                 break
                                             }
                                         }
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        withContext(Dispatchers.Main) {
                                             if (success) {
                                                 android.widget.Toast.makeText(context, "Successfully woke up $selectedDevice", android.widget.Toast.LENGTH_SHORT).show()
                                             } else {
-                                                android.widget.Toast.makeText(context, "Failed to wake up $selectedDevice (no response)", android.widget.Toast.LENGTH_LONG).show()
+                                                android.widget.Toast.makeText(context, "No response from $selectedDevice", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
                                 } else {
-                                    val previousLastSeenMap = activeMap.mapValues { it.value.lastSeen }
                                     activeMap.values.forEach { device ->
                                         if (anyDeviceActive) {
-                                            com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.sendSleepCommand(device.name)
+                                            SupabaseClientManager.sendSleepCommand(device.name)
                                         } else {
-                                            com.aistudio.missioncontrol.pxytwe.SupabaseClientManager.sendWakeCommand(device.name)
-                                        }
-                                    }
-                                    if (!anyDeviceActive) {
-                                        var anySuccess = false
-                                        for (i in 1..10) {
-                                            kotlinx.coroutines.delay(1000)
-                                            val currentAnySuccess = previousLastSeenMap.any { (name, prevLastSeen) -> 
-                                                val currentDevice = com.aistudio.missioncontrol.pxytwe.AppState.activeDevices[name]
-                                                currentDevice != null && currentDevice.lastSeen > prevLastSeen
-                                            }
-                                            if (currentAnySuccess) {
-                                                anySuccess = true
-                                                break
-                                            }
-                                        }
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            if (anySuccess) {
-                                                android.widget.Toast.makeText(context, "Successfully woke up some devices", android.widget.Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                android.widget.Toast.makeText(context, "Failed to wake up any devices (no response)", android.widget.Toast.LENGTH_LONG).show()
-                                            }
+                                            SupabaseClientManager.sendWakeCommand(device.name)
                                         }
                                     }
                                 }
                             }
                             showShutdownConfirmation.value = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (anyDeviceActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                        colors = ButtonDefaults.buttonColors(containerColor = if (anyDeviceActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(if (anyDeviceActive) "SLEEP" else "WAKE")
+                        Text(if (anyDeviceActive) "SLEEP" else "WAKE", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showShutdownConfirmation.value = false }) {
-                        Text("CANCEL")
+                        Text("CANCEL", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                }
+                },
+                shape = RoundedCornerShape(24.dp)
             )
         }
     }
 }
 
 @Composable
-fun HUDDataBlock(label: String, value: String?, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
+private fun CompactMetricChip(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    highlightColor: Color = MaterialTheme.colorScheme.onSurface,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = highlightColor,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+fun SpecRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            letterSpacing = 1.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.5.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        if (value != null) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 20.sp
-            )
-        } else {
-            SkeletonLoader(modifier = Modifier.height(20.dp).fillMaxWidth(0.6f))
-        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
+        )
     }
 }

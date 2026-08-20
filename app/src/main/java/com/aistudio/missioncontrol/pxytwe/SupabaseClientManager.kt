@@ -34,16 +34,23 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-// Live `locations` row shape. Extra columns the controller doesn't read
-// (altitude, pitch, roll, pressure, charging, etc.) are ignored by Kotlin
-// serialization — that's by design and survives schema growth.
+// Live `locations` row shape with full telemetry support
 @Serializable
 data class LocationData(
-    val device_id: String, // carries the human-readable device name as before
+    val device_id: String, // carries the human-readable device name
     val latitude: Double,
     val longitude: Double,
-    val accuracy: Float,
-    val bearing: Float,
+    val altitude: Double? = null,
+    val speed: Float? = null,
+    val accuracy: Float = 0f,
+    val bearing: Float = 0f,
+    val pitch: Float? = null,
+    val roll: Float? = null,
+    val pressure: Float? = null,
+    val battery_level: Float? = null,
+    val charging: Boolean? = null,
+    val signal_dbm: Int? = null,
+    val network_type: String? = null,
     val created_at: String
 )
 
@@ -156,9 +163,10 @@ object SupabaseClientManager {
                 }
                 launch {
                     channel.broadcastFlow<CommandPayload>(event = "command").collect { payload ->
-                        if (payload.command == "status_response") {
-                            Log.d("SupabaseClient", "Status response received from ${payload.device_id}: ${payload.params}")
+                        if (payload.command == "status_response" || payload.command == "location_state") {
+                            Log.d("SupabaseClient", "Command event received from ${payload.device_id}: ${payload.command} (${payload.params})")
                             _statusFlow.emit(payload)
+                            AppState.handleIncomingCommand(payload)
                         }
                     }
                 }
@@ -186,13 +194,15 @@ object SupabaseClientManager {
         sendCommand(deviceId, "sleep")
     }
 
+    suspend fun sendEnableLocationCommand(deviceId: String) {
+        sendCommand(deviceId, "enable_location")
+    }
+
     suspend fun sendAutoHealCommand(deviceId: String) {
         sendCommand(deviceId, "auto_heal")
     }
 
-    suspend fun sendFixAllCommand(deviceId: String) {
-        sendCommand(deviceId, "auto_heal")
-    }
+
 
     suspend fun pingDevice(deviceId: String): Long? {
         val start = System.currentTimeMillis()
@@ -280,7 +290,11 @@ object SupabaseClientManager {
         // Ponytail: Don't swallow network exceptions here — let the caller 
         // (AppState) decide how to retry.
         val result = client.postgrest["locations"].select(
-            Columns.list("device_id", "latitude", "longitude", "accuracy", "bearing", "created_at")
+            Columns.list(
+                "device_id", "latitude", "longitude", "altitude", "speed", "accuracy",
+                "bearing", "pitch", "roll", "pressure", "battery_level", "charging",
+                "signal_dbm", "network_type", "created_at"
+            )
         ) {
             order("created_at", order = Order.DESCENDING)
             limit(5000)

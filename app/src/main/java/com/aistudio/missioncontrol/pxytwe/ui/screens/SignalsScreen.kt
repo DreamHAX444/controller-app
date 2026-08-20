@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SensorsOff
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -156,6 +158,11 @@ fun SignalsScreen() {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 showMessage("Sleeping ${dev.name}...")
                                 scope.launch { SupabaseClientManager.sendSleepCommand(dev.name) }
+                            },
+                            onEnableLocation = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                showMessage("Turning ON location on ${dev.name}...")
+                                scope.launch { SupabaseClientManager.sendEnableLocationCommand(dev.name) }
                             }
                         )
                     }
@@ -283,7 +290,8 @@ fun TrackerSignalCard(
     device: DeviceTelemetry,
     currentTime: Long,
     onWake: () -> Unit,
-    onSleep: () -> Unit
+    onSleep: () -> Unit,
+    onEnableLocation: () -> Unit
 ) {
     val diff = currentTime - device.lastSeen
     val isLive = diff < 15_000
@@ -359,14 +367,23 @@ fun TrackerSignalCard(
                 Spacer(Modifier.size(16.dp))
                 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = device.name.uppercase(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = ColorTextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = device.name.uppercase(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ColorTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (!device.isLocationOn) {
+                            LocationOffBadge()
+                        }
+                    }
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = "Last seen: $lastSeenStr",
@@ -385,14 +402,56 @@ fun TrackerSignalCard(
                         modifier = Modifier.height(IntrinsicSize.Min),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onWake, modifier = Modifier.size(44.dp)) {
-                            Icon(Icons.Filled.WbSunny, contentDescription = "Wake", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        IconButton(onClick = onEnableLocation, modifier = Modifier.size(40.dp)) {
+                            Icon(
+                                if (device.isLocationOn) Icons.Filled.LocationOn else Icons.Filled.LocationOff,
+                                contentDescription = "Turn Location ON",
+                                tint = if (device.isLocationOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                         VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
-                        IconButton(onClick = onSleep, modifier = Modifier.size(44.dp)) {
-                            Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Sleep", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                        IconButton(onClick = onWake, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.WbSunny, contentDescription = "Wake", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        }
+                        VerticalDivider(color = ColorBorder, thickness = 1.dp, modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp))
+                        IconButton(onClick = onSleep, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Sleep", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         }
                     }
+                }
+            }
+
+            // Telemetry quick glance strip
+            HorizontalDivider(color = ColorBorder.copy(alpha = 0.5f), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val cardinal = getCardinalDirection(device.heading)
+                val speedText = if (device.speed > 0.5f) String.format(java.util.Locale.US, "%.1f km/h", device.speed) else "0.0 km/h"
+                val batteryText = "${device.battery}%" + if (device.charging) " ⚡" else ""
+                val signalText = "${device.signal} dBm (${device.networkType})"
+                val headingText = String.format(java.util.Locale.US, "%.0f° %s", device.heading, cardinal)
+
+                Column {
+                    Text("SIGNAL", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = ColorTextSecondary)
+                    Text(signalText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = ColorTextPrimary)
+                }
+                Column {
+                    Text("BATTERY", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = ColorTextSecondary)
+                    Text(batteryText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = ColorTextPrimary)
+                }
+                Column {
+                    Text("SPEED", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = ColorTextSecondary)
+                    Text(speedText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = ColorTextPrimary)
+                }
+                Column {
+                    Text("HEADING", style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = ColorTextSecondary)
+                    Text(headingText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = ColorTextPrimary)
                 }
             }
         }

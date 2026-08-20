@@ -36,7 +36,7 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
 
     Scaffold(
         containerColor = ColorBackground,
-        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         topBar = {
             TopAppBar(
                 title = { },
@@ -141,6 +141,7 @@ fun SirenSettingsScreen(onBack: () -> Unit) {
                 }
 
 
+                Spacer(Modifier.height(40.dp))
             }
         }
     }

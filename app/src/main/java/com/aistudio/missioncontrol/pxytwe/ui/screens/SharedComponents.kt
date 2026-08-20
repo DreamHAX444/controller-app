@@ -6,7 +6,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,6 +18,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,5 +83,28 @@ fun RealtimeStatusStrip(modifier: Modifier = Modifier) {
             fontSize = 9.sp,
             letterSpacing = 1.sp,
         )
+    }
+}
+
+@Composable
+fun LocationOffBadge(modifier: Modifier = Modifier) {
+    Surface(
+        color = Color.Red.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.LocationOff,
+                contentDescription = null,
+                tint = Color.Red,
+                modifier = Modifier.width(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("LOCATION OFF", color = Color.Red, fontWeight = FontWeight.Bold)
+        }
     }
 }

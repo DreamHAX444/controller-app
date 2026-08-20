@@ -30,6 +30,7 @@ fun EventsScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
     ) {
         if (events.isEmpty()) {
             PlaceholderScreen(
@@ -39,7 +40,7 @@ fun EventsScreen() {
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp, start = 24.dp, end = 24.dp),
+                contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp, start = 24.dp, end = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {

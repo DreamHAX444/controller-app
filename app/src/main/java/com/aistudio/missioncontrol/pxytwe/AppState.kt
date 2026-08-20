@@ -11,21 +11,24 @@ data class DeviceTelemetry(
     val name: String,
     val lat: Double,
     val lon: Double,
-    val battery: Int,
-    val speed: Float,
-    val signal: Int = -100,
+    val battery: Int = 100,
+    val speed: Float = 0f,
+    val signal: Int = -85,
+    val networkType: String = "4G LTE",
     val lastSeen: Long = 0L,
     val history: List<Pair<Double, Double>> = emptyList(),
     val updateCount: Int = 0,
     val locTimestamp: Long = 0L,
     val heading: Float = 0f,
     val altitude: Double = 0.0,
+    val accuracy: Float = 0f,
     val pitch: Float = 0f,
     val roll: Float = 0f,
     val pressure: Float = 0f,
     val charging: Boolean = false,
     val ping: Long = -1L,
-    val cameras: List<String> = emptyList()
+    val cameras: List<String> = emptyList(),
+    val isLocationOn: Boolean = true
 )
 
 object AppState {
@@ -74,22 +77,35 @@ object AppState {
                     val fences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(fencesStr)
 
                     initialLocs.forEach { initialLoc ->
+                        val existing = activeDevices[initialLoc.device_id]
+                        val isFallback = initialLoc.latitude == 0.0 && initialLoc.longitude == 0.0 && existing != null && (existing.lat != 0.0 || existing.lon != 0.0)
+                        val actualLat = if (isFallback) existing!!.lat else initialLoc.latitude
+                        val actualLon = if (isFallback) existing!!.lon else initialLoc.longitude
+                        val parsedTime = parseSupabaseDate(initialLoc.created_at)
+
                         val dev = DeviceTelemetry(
                             name = initialLoc.device_id,
-                            lat = initialLoc.latitude,
-                            lon = initialLoc.longitude,
+                            lat = actualLat,
+                            lon = actualLon,
                             heading = initialLoc.bearing,
-                            battery = 100,
-                            speed = 0f,
-                            lastSeen = parseSupabaseDate(initialLoc.created_at)
+                            altitude = initialLoc.altitude ?: 0.0,
+                            accuracy = initialLoc.accuracy,
+                            speed = initialLoc.speed ?: 0f,
+                            battery = (initialLoc.battery_level ?: 100f).toInt(),
+                            charging = initialLoc.charging ?: false,
+                            signal = initialLoc.signal_dbm ?: -85,
+                            networkType = initialLoc.network_type ?: "4G LTE",
+                            pitch = initialLoc.pitch ?: 0f,
+                            roll = initialLoc.roll ?: 0f,
+                            pressure = initialLoc.pressure ?: 0f,
+                            lastSeen = parsedTime
                         )
                         // Only add if we don't have it or if the new one is newer
-                        val existing = activeDevices[dev.name]
                         if (existing == null || dev.lastSeen > existing.lastSeen) {
                             activeDevices[dev.name] = dev
                         }
                         
-                        val locGeo = org.osmdroid.util.GeoPoint(initialLoc.latitude, initialLoc.longitude)
+                        val locGeo = org.osmdroid.util.GeoPoint(actualLat, actualLon)
                         val currentZone = fences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
                         if (currentZone != null) {
                             deviceCurrentZones[dev.name] = currentZone
@@ -106,7 +122,7 @@ object AppState {
                     
                     // Collect forever until flow ends or exception
                     locationsFlow.collect { loc ->
-                        processLocationUpdate(loc.device_id, loc.latitude, loc.longitude, loc.bearing)
+                        processLocationUpdate(loc)
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
@@ -119,29 +135,49 @@ object AppState {
         }
     }
 
-    private suspend fun processLocationUpdate(deviceId: String, lat: Double, lon: Double, heading: Float) {
+    private suspend fun processLocationUpdate(loc: LocationData) {
         withContext(Dispatchers.Main) {
+            val deviceId = loc.device_id
+            val lat = loc.latitude
+            val lon = loc.longitude
+            val heading = loc.bearing
             val existing = activeDevices[deviceId]
+            val isFallback = lat == 0.0 && lon == 0.0 && existing != null && (existing.lat != 0.0 || existing.lon != 0.0)
+            val actualLat = if (isFallback) existing!!.lat else lat
+            val actualLon = if (isFallback) existing!!.lon else lon
+            val actualHeading = if (lat == 0.0 && lon == 0.0 && existing != null) existing.heading else heading
+
             val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
-            newHistory.add(Pair(lat, lon))
+            if (actualLat != 0.0 || actualLon != 0.0) {
+                newHistory.add(Pair(actualLat, actualLon))
+            }
             
             val updatedDev = DeviceTelemetry(
                 name = deviceId,
-                lat = lat,
-                lon = lon,
-                heading = heading,
-                battery = 100,
-                speed = 0f,
+                lat = actualLat,
+                lon = actualLon,
+                heading = actualHeading,
+                altitude = loc.altitude ?: existing?.altitude ?: 0.0,
+                accuracy = if (loc.accuracy > 0f) loc.accuracy else existing?.accuracy ?: 0f,
+                speed = loc.speed ?: existing?.speed ?: 0f,
+                battery = loc.battery_level?.toInt() ?: existing?.battery ?: 100,
+                charging = loc.charging ?: existing?.charging ?: false,
+                signal = loc.signal_dbm ?: existing?.signal ?: -85,
+                networkType = loc.network_type ?: existing?.networkType ?: "4G LTE",
+                pitch = loc.pitch ?: existing?.pitch ?: 0f,
+                roll = loc.roll ?: existing?.roll ?: 0f,
+                pressure = loc.pressure ?: existing?.pressure ?: 0f,
                 lastSeen = System.currentTimeMillis(),
                 history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
                 updateCount = (existing?.updateCount ?: 0) + 1,
-                locTimestamp = System.currentTimeMillis()
+                locTimestamp = System.currentTimeMillis(),
+                isLocationOn = if (lat == 0.0 && lon == 0.0 && existing != null) existing.isLocationOn else true
             )
             activeDevices[deviceId] = updatedDev
 
             val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
             val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
-            val locGeo = org.osmdroid.util.GeoPoint(lat, lon)
+            val locGeo = org.osmdroid.util.GeoPoint(actualLat, actualLon)
             val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
             val previousZone = deviceCurrentZones[deviceId]
             
@@ -162,9 +198,62 @@ object AppState {
         }
     }
 
+    fun updateDeviceLocationStatus(deviceId: String, isLocationOn: Boolean) {
+        appScope.launch(Dispatchers.Main) {
+            val existing = activeDevices[deviceId]
+            if (existing != null) {
+                if (existing.isLocationOn != isLocationOn) {
+                    activeDevices[deviceId] = existing.copy(isLocationOn = isLocationOn)
+                    Log.i("AppState", "Updated location state for $deviceId: isLocationOn=$isLocationOn")
+                }
+            } else {
+                activeDevices[deviceId] = DeviceTelemetry(
+                    name = deviceId,
+                    lat = 0.0,
+                    lon = 0.0,
+                    battery = 100,
+                    speed = 0f,
+                    lastSeen = System.currentTimeMillis(),
+                    isLocationOn = isLocationOn
+                )
+            }
+        }
+    }
+
+    fun handleIncomingCommand(payload: CommandPayload) {
+        when (payload.command) {
+            "location_state" -> {
+                val isLocOn = payload.params?.uppercase() == "ON"
+                updateDeviceLocationStatus(payload.device_id, isLocOn)
+            }
+            "status_response" -> {
+                val params = payload.params ?: ""
+                if (params.contains("Loc:OFF", ignoreCase = true)) {
+                    updateDeviceLocationStatus(payload.device_id, false)
+                } else if (params.contains("Loc:ON", ignoreCase = true)) {
+                    updateDeviceLocationStatus(payload.device_id, true)
+                }
+            }
+        }
+    }
+
     fun injectDebugLocation(lat: Double, lon: Double) {
         appScope.launch {
-            processLocationUpdate("DEBUG-DEV-1", lat, lon, 0f)
+            processLocationUpdate(
+                LocationData(
+                    device_id = "DEBUG-DEV-1",
+                    latitude = lat,
+                    longitude = lon,
+                    accuracy = 5f,
+                    bearing = 45f,
+                    speed = 12.5f,
+                    battery_level = 88f,
+                    charging = false,
+                    signal_dbm = -75,
+                    network_type = "5G",
+                    created_at = java.time.Instant.now().toString()
+                )
+            )
         }
     }
 
