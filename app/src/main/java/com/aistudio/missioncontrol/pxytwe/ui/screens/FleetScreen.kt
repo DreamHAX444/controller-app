@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.edit
 import androidx.core.graphics.ColorUtils
@@ -46,6 +47,7 @@ import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
 import com.aistudio.missioncontrol.pxytwe.ui.components.LocationOffBadge
 import com.aistudio.missioncontrol.pxytwe.ui.theme.*
 import com.aistudio.missioncontrol.pxytwe.utils.GeofenceData
+import com.aistudio.missioncontrol.pxytwe.utils.AppPrewarmManager
 import com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -169,38 +171,37 @@ fun FleetScreen(
 
     val activeMap = AppState.activeDevices
     
-    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            currentTime = System.currentTimeMillis()
-        }
-    }
-    
-    val isAwake by remember(selectedDevice, currentTime) {
+    val currentTime = System.currentTimeMillis()
+    val isAwake by remember(selectedDevice, activeMap.values.toList()) {
         derivedStateOf {
+            val now = System.currentTimeMillis()
             if (selectedDevice == "All Devices") {
-                activeMap.values.any { currentTime - it.lastSeen < 15000 }
+                activeMap.values.any { now - it.lastSeen < 15000 }
             } else {
                 val dev = activeMap[selectedDevice]
-                dev != null && (currentTime - dev.lastSeen < 15000)
+                dev != null && (now - dev.lastSeen < 15000)
             }
         }
     }
 
-    val devicesList = activeMap.values.mapIndexed { idx, dev ->
-        val color = when(idx % 3) {
-            0 -> MapMarkerGreen.toArgb()
-            1 -> MapMarkerCyan.toArgb()
-            else -> MapMarkerYellow.toArgb()
+    val activeDeviceItems = activeMap.values.toList()
+    val devicesList = remember(activeDeviceItems) {
+        activeDeviceItems.mapIndexed { idx, dev ->
+            val color = when(idx % 3) {
+                0 -> MapMarkerGreen.toArgb()
+                1 -> MapMarkerCyan.toArgb()
+                else -> MapMarkerYellow.toArgb()
+            }
+            MapDevice(dev.name, GeoPoint(dev.lat, dev.lon), color, dev.heading)
         }
-        MapDevice(dev.name, GeoPoint(dev.lat, dev.lon), color, dev.heading)
     }
 
     val resources = context.resources
     val mapView = remember {
         MapView(context).apply {
             setMultiTouchControls(true)
+            setDestroyMode(false)
+            setTilesScaledToDpi(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             controller.setZoom(15.0)
             controller.setCenter(startPoint)
@@ -241,43 +242,43 @@ fun FleetScreen(
     val historyOverlay = remember { FolderOverlay() }
     val devicesOverlay = remember { FolderOverlay() }
     
-    // Directional Marker Bitmaps
-    val deviceBitmaps = remember(devicesList) {
-        devicesList.associate { device ->
-            val bitmap = createBitmap(100, 100, android.graphics.Bitmap.Config.ARGB_8888)
-            val canvas = android.graphics.Canvas(bitmap)
-            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            
-            // Outer glow ring
-            paint.color = device.color
-            paint.alpha = 60
-            paint.style = android.graphics.Paint.Style.FILL
-            canvas.drawCircle(50f, 50f, 44f, paint)
-
-            // Inner solid pointer
-            paint.color = device.color
-            paint.alpha = 255
-            val path = android.graphics.Path()
-            path.moveTo(50f, 12f)
-            path.lineTo(76f, 78f)
-            path.lineTo(50f, 64f)
-            path.lineTo(24f, 78f)
-            path.close()
-            canvas.drawPath(path, paint)
-            
-            // Core accent highlight
-            paint.color = android.graphics.Color.WHITE
-            val innerPath = android.graphics.Path()
-            innerPath.moveTo(50f, 26f)
-            innerPath.lineTo(66f, 70f)
-            innerPath.lineTo(50f, 60f)
-            innerPath.lineTo(34f, 70f)
-            innerPath.close()
-            canvas.drawPath(innerPath, paint)
-            
-            device.name to bitmap
+    // Pre-rendered Directional Marker Bitmaps (Loaded from AppPrewarmManager)
+    val markerBitmapsByColor = remember {
+        if (AppPrewarmManager.cachedMarkerBitmaps.isNotEmpty()) {
+            AppPrewarmManager.cachedMarkerBitmaps
+        } else {
+            val colors = listOf(MapMarkerGreen.toArgb(), MapMarkerCyan.toArgb(), MapMarkerYellow.toArgb())
+            colors.associateWith { color ->
+                val bitmap = createBitmap(100, 100, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                paint.color = color
+                paint.alpha = 60
+                paint.style = android.graphics.Paint.Style.FILL
+                canvas.drawCircle(50f, 50f, 44f, paint)
+                paint.color = color
+                paint.alpha = 255
+                val path = android.graphics.Path()
+                path.moveTo(50f, 12f)
+                path.lineTo(76f, 78f)
+                path.lineTo(50f, 64f)
+                path.lineTo(24f, 78f)
+                path.close()
+                canvas.drawPath(path, paint)
+                paint.color = android.graphics.Color.WHITE
+                val innerPath = android.graphics.Path()
+                innerPath.moveTo(50f, 26f)
+                innerPath.lineTo(66f, 70f)
+                innerPath.lineTo(50f, 60f)
+                innerPath.lineTo(34f, 70f)
+                innerPath.close()
+                canvas.drawPath(innerPath, paint)
+                bitmap
+            }
         }
     }
+    val cachedMarkers = remember { mutableMapOf<String, Marker>() }
+    val cachedPolylines = remember { mutableMapOf<String, Polyline>() }
 
     val drawingPointBitmap = remember(currentGeofenceColor.intValue) {
         val color = currentGeofenceColor.intValue
@@ -324,8 +325,8 @@ fun FleetScreen(
         bitmap
     }
 
-    val geofencePointsList = currentGeofencePoints.toList()
-    val savedFencesList = savedGeofences.toList()
+    val geofencePointsList = remember(currentGeofencePoints.size, currentGeofencePoints.toList()) { currentGeofencePoints.toList() }
+    val savedFencesList = remember(savedGeofences.size, savedGeofences.toList()) { savedGeofences.toList() }
 
     val geofenceLabelBitmaps = remember(savedFencesList) {
         val cache = mutableMapOf<String, android.graphics.Bitmap>()
@@ -521,40 +522,77 @@ fun FleetScreen(
             mapView.invalidate()
         }
 
-        // Devices & Breadcrumbs sync
+        // High-Performance Devices & Breadcrumbs Sync (Zero Allocation)
         LaunchedEffect(devicesList, selectedDevice) {
-            historyOverlay.items.clear()
-            devicesOverlay.items.clear()
-            
+            val visibleDeviceNames = if (selectedDevice == "All Devices") {
+                devicesList.map { it.name }.toSet()
+            } else {
+                setOf(selectedDevice)
+            }
+
+            // Sync History Polylines without reconstructing objects
             val activeDevices = activeMap.values.toList()
+            val currentHistoryKeys = mutableSetOf<String>()
             activeDevices.forEach { dev ->
-                if (selectedDevice == "All Devices" || selectedDevice == dev.name) {
-                    if (dev.history.size >= 2) {
-                        val polyline = Polyline()
-                        polyline.setPoints(dev.history.map { GeoPoint(it.first, it.second) })
-                        polyline.outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 120)
-                        polyline.outlinePaint.strokeWidth = 4f
-                        historyOverlay.add(polyline)
+                if (visibleDeviceNames.contains(dev.name) && dev.history.size >= 2) {
+                    currentHistoryKeys.add(dev.name)
+                    val points = dev.history.map { GeoPoint(it.first, it.second) }
+                    val polyline = cachedPolylines.getOrPut(dev.name) {
+                        Polyline().apply {
+                            outlinePaint.color = ColorUtils.setAlphaComponent(MapMarkerCyan.toArgb(), 120)
+                            outlinePaint.strokeWidth = 4f
+                            historyOverlay.add(this)
+                        }
                     }
+                    polyline.setPoints(points)
+                }
+            }
+            // Remove inactive polylines
+            val polylineIterator = cachedPolylines.entries.iterator()
+            while (polylineIterator.hasNext()) {
+                val entry = polylineIterator.next()
+                if (!currentHistoryKeys.contains(entry.key)) {
+                    historyOverlay.remove(entry.value)
+                    polylineIterator.remove()
                 }
             }
 
+            // Sync Device Markers (Mutate in-place to avoid GC lag)
+            val currentMarkerKeys = mutableSetOf<String>()
             devicesList.forEach { device ->
-                if (selectedDevice == "All Devices" || selectedDevice == device.name) {
-                    val marker = Marker(mapView)
-                    marker.position = device.point
-                    marker.title = device.name
-                    marker.icon = deviceBitmaps[device.name]?.toDrawable(resources)
-                    marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    marker.rotation = -device.heading
-                    marker.setOnMarkerClickListener { _, _ ->
-                        updateSelectedDevice(device.name)
-                        mapView.controller.animateTo(device.point)
-                        true
+                if (visibleDeviceNames.contains(device.name)) {
+                    currentMarkerKeys.add(device.name)
+                    val marker = cachedMarkers.getOrPut(device.name) {
+                        Marker(mapView).apply {
+                            title = device.name
+                            icon = markerBitmapsByColor[device.color]?.toDrawable(resources)
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            setOnMarkerClickListener { _, _ ->
+                                updateSelectedDevice(device.name)
+                                mapView.controller.animateTo(this.position)
+                                true
+                            }
+                            devicesOverlay.add(this)
+                        }
                     }
-                    devicesOverlay.add(marker)
+                    if (marker.position.latitude != device.point.latitude || marker.position.longitude != device.point.longitude) {
+                        marker.position = device.point
+                    }
+                    if (marker.rotation != -device.heading) {
+                        marker.rotation = -device.heading
+                    }
                 }
             }
+            // Remove inactive markers
+            val markerIterator = cachedMarkers.entries.iterator()
+            while (markerIterator.hasNext()) {
+                val entry = markerIterator.next()
+                if (!currentMarkerKeys.contains(entry.key)) {
+                    devicesOverlay.remove(entry.value)
+                    markerIterator.remove()
+                }
+            }
+
             mapView.invalidate()
         }
 
@@ -634,10 +672,9 @@ fun FleetScreen(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                        shadowElevation = 8.dp,
-                        modifier = Modifier
-                            .widthIn(max = 340.dp)
-                            .clickable { isDropdownExpanded = !isDropdownExpanded }
+                        shadowElevation = 4.dp,
+                        onClick = { isDropdownExpanded = !isDropdownExpanded },
+                        modifier = Modifier.widthIn(max = 340.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -651,13 +688,12 @@ fun FleetScreen(
                                 animationSpec = infiniteRepeatable(animation = tween(1000, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
                                 label = "pulse_top_alpha"
                             )
-                            val dotColor = if (isAwake) Color(0xFF4ADE80).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
+                                    .graphicsLayer { alpha = if (isAwake) pulseAlpha else 0.4f }
                                     .clip(CircleShape)
-                                    .background(dotColor)
+                                    .background(if (isAwake) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant)
                             )
                             
                             Spacer(modifier = Modifier.width(8.dp))
@@ -692,7 +728,7 @@ fun FleetScreen(
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowDown,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp).rotate(rotation),
+                                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = rotation },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -708,7 +744,7 @@ fun FleetScreen(
                             shape = RoundedCornerShape(20.dp),
                             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                            shadowElevation = 12.dp,
+                            shadowElevation = 4.dp,
                             modifier = Modifier
                                 .widthIn(max = 320.dp)
                                 .padding(top = 8.dp)
@@ -917,6 +953,11 @@ fun FleetScreen(
                     else -> "${diff / 3600000}h ago"
                 }
                 val headingVal = currentTelemetry?.heading ?: 0f
+                val animatedHeading by animateFloatAsState(
+                    targetValue = headingVal,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                    label = "animated_heading"
+                )
                 val cardinal = getCardinalDirection(headingVal)
                 val headingText = "${headingVal.toInt()}° $cardinal"
 
@@ -924,7 +965,7 @@ fun FleetScreen(
                     shape = RoundedCornerShape(24.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                    shadowElevation = 12.dp,
+                    shadowElevation = 4.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -1008,7 +1049,7 @@ fun FleetScreen(
                                             Icon(
                                                 Icons.Default.Navigation,
                                                 contentDescription = null,
-                                                modifier = Modifier.size(9.dp).rotate(headingVal),
+                                                modifier = Modifier.size(9.dp).graphicsLayer { rotationZ = animatedHeading },
                                                 tint = MaterialTheme.colorScheme.primary
                                             )
                                             Spacer(modifier = Modifier.width(3.dp))
@@ -1041,7 +1082,8 @@ fun FleetScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(34.dp).clickable { showDeviceDetailsDialog.value = true }
+                                    onClick = { showDeviceDetailsDialog.value = true },
+                                    modifier = Modifier.size(34.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Info, contentDescription = "Specs", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1052,7 +1094,7 @@ fun FleetScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = if (currentTelemetry?.isLocationOn == false) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(34.dp).clickable {
+                                    onClick = {
                                         scope.launch {
                                             try {
                                                 SupabaseClientManager.sendEnableLocationCommand(selectedDevice)
@@ -1061,7 +1103,8 @@ fun FleetScreen(
                                                 android.widget.Toast.makeText(context, "Failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                             }
                                         }
-                                    }
+                                    },
+                                    modifier = Modifier.size(34.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
@@ -1077,7 +1120,8 @@ fun FleetScreen(
                                 Surface(
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(34.dp).clickable { onNavigateToMicMonitor(selectedDevice) }
+                                    onClick = { onNavigateToMicMonitor(selectedDevice) },
+                                    modifier = Modifier.size(34.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Mic, contentDescription = "Mic Monitor", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
@@ -1157,7 +1201,7 @@ fun FleetScreen(
                         shape = RoundedCornerShape(22.dp),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                        shadowElevation = 8.dp,
+                        shadowElevation = 4.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -1182,7 +1226,7 @@ fun FleetScreen(
                                     shape = RoundedCornerShape(14.dp),
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                                    modifier = Modifier.clickable {
+                                    onClick = {
                                         updateSelectedDevice(dev.name)
                                         frameMapSelection(dev.name)
                                     }
@@ -1359,16 +1403,16 @@ fun FleetScreen(
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 luxuryColors.forEach { color ->
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(color))
-                                            .clickable { currentGeofenceColor.intValue = color },
-                                        contentAlignment = Alignment.Center
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(color),
+                                        onClick = { currentGeofenceColor.intValue = color },
+                                        modifier = Modifier.size(32.dp)
                                     ) {
-                                        if (currentGeofenceColor.intValue == color) {
-                                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (currentGeofenceColor.intValue == color) {
+                                                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                            }
                                         }
                                     }
                                 }
@@ -1385,11 +1429,11 @@ fun FleetScreen(
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clickable(enabled = currentGeofencePoints.isNotEmpty()) {
-                                        if (currentGeofencePoints.isNotEmpty()) currentGeofencePoints.removeAt(currentGeofencePoints.lastIndex)
-                                    }
+                                onClick = {
+                                    if (currentGeofencePoints.isNotEmpty()) currentGeofencePoints.removeAt(currentGeofencePoints.lastIndex)
+                                },
+                                enabled = currentGeofencePoints.isNotEmpty(),
+                                modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
@@ -1405,7 +1449,8 @@ fun FleetScreen(
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = MaterialTheme.colorScheme.errorContainer,
-                                    modifier = Modifier.size(38.dp).clickable { showDeleteConfirmation.value = true }
+                                    onClick = { showDeleteConfirmation.value = true },
+                                    modifier = Modifier.size(38.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onErrorContainer)

@@ -108,3 +108,4 @@ fun LocationOffBadge(modifier: Modifier = Modifier) {
         }
     }
 }
+

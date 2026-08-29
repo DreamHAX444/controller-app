@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import com.aistudio.missioncontrol.pxytwe.AppState
 import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
@@ -82,26 +83,25 @@ fun MicHomeScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1.seconds)
-            now = System.currentTimeMillis()
-        }
-    }
 
-    val allDevices = activeMap.values.toList().sortedBy { it.name.lowercase() }
+
+    val activeDeviceList = activeMap.values.toList()
+    val allDevices = remember(activeDeviceList) { activeDeviceList.sortedBy { it.name.lowercase() } }
     val isStreamingActive = activeDeviceId != null && monitorStatus == MonitorStatus.Live
 
-    val filteredDevices = allDevices.filter { dev ->
-        val matchesSearch = searchQuery.isBlank() || dev.name.contains(searchQuery.trim(), ignoreCase = true)
-        val isLive = now - dev.lastSeen < 15000
-        val isStreaming = activeDeviceId == dev.name && isStreamingActive
-        val matchesFilter = when (selectedFilter) {
-            MicFilter.ALL -> true
-            MicFilter.STREAMING -> isStreaming
-            MicFilter.ONLINE -> isLive
+    val filteredDevices = remember(allDevices, searchQuery, selectedFilter, activeDeviceId, isStreamingActive) {
+        val currentNow = System.currentTimeMillis()
+        allDevices.filter { dev ->
+            val matchesSearch = searchQuery.isBlank() || dev.name.contains(searchQuery.trim(), ignoreCase = true)
+            val isLive = currentNow - dev.lastSeen < 15000
+            val isStreaming = activeDeviceId == dev.name && isStreamingActive
+            val matchesFilter = when (selectedFilter) {
+                MicFilter.ALL -> true
+                MicFilter.STREAMING -> isStreaming
+                MicFilter.ONLINE -> isLive
+            }
+            matchesSearch && matchesFilter
         }
-        matchesSearch && matchesFilter
     }
 
     Box(
@@ -166,9 +166,10 @@ fun MicHomeScreen(
                             Box(
                                 modifier = Modifier
                                     .size(7.dp)
+                                    .graphicsLayer { alpha = if (isStreamingActive) pulseAlpha else 1f }
                                     .clip(CircleShape)
                                     .background(
-                                        if (isStreamingActive) Color(0xFF4ADE80).copy(alpha = pulseAlpha)
+                                        if (isStreamingActive) Color(0xFF4ADE80)
                                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                     )
                             )
@@ -709,7 +710,7 @@ private fun ModernMicCard(
                                     Icon(
                                         Icons.Default.Navigation,
                                         contentDescription = null,
-                                        modifier = Modifier.size(9.dp).rotate(headingVal),
+                                        modifier = Modifier.size(9.dp).graphicsLayer { rotationZ = headingVal },
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.width(3.dp))
@@ -860,7 +861,7 @@ private fun FilterBadge(
         shape = RoundedCornerShape(10.dp),
         color = if (isSelected) highlightColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         border = BorderStroke(1.dp, if (isSelected) highlightColor.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-        modifier = Modifier.clickable { onClick() }
+        onClick = { onClick() }
     ) {
         Text(
             text = label,

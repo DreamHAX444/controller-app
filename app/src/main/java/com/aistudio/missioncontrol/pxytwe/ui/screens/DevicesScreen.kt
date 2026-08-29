@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -55,7 +56,8 @@ sealed class DiagnosticModalState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DevicesScreen(
-    onNavigateToMicMonitor: (String) -> Unit
+    onNavigateToMicMonitor: (String) -> Unit,
+    onNavigateToHistory: () -> Unit = {}
 ) {
     val activeMap = AppState.activeDevices
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -82,29 +84,33 @@ fun DevicesScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1.seconds)
-            now = System.currentTimeMillis()
-        }
-    }
 
-    val allDevices = activeMap.values.toList().sortedBy { it.name.lowercase() }
+
+    val activeDeviceList = activeMap.values.toList()
+    val allDevices = remember(activeDeviceList) { activeDeviceList.sortedBy { it.name.lowercase() } }
     
-    val liveCount = allDevices.count { now - it.lastSeen < 15000 }
-    val offlineCount = allDevices.size - liveCount
-    val gpsOffCount = allDevices.count { !it.isLocationOn }
+    val liveCount by remember(activeDeviceList) { 
+        derivedStateOf { 
+            val currentNow = System.currentTimeMillis()
+            activeDeviceList.count { currentNow - it.lastSeen < 15000 } 
+        } 
+    }
+    val offlineCount by remember(allDevices.size, liveCount) { derivedStateOf { allDevices.size - liveCount } }
+    val gpsOffCount by remember(activeDeviceList) { derivedStateOf { activeDeviceList.count { !it.isLocationOn } } }
 
-    val filteredDevices = allDevices.filter { dev ->
-        val matchesSearch = searchQuery.isBlank() || dev.name.contains(searchQuery.trim(), ignoreCase = true)
-        val isLive = now - dev.lastSeen < 15000
-        val matchesFilter = when (selectedFilter) {
-            DeviceFilter.ALL -> true
-            DeviceFilter.LIVE -> isLive
-            DeviceFilter.OFFLINE -> !isLive
-            DeviceFilter.GPS_OFF -> !dev.isLocationOn
+    val filteredDevices = remember(allDevices, searchQuery, selectedFilter) {
+        val currentNow = System.currentTimeMillis()
+        allDevices.filter { dev ->
+            val matchesSearch = searchQuery.isBlank() || dev.name.contains(searchQuery.trim(), ignoreCase = true)
+            val isLive = currentNow - dev.lastSeen < 15000
+            val matchesFilter = when (selectedFilter) {
+                DeviceFilter.ALL -> true
+                DeviceFilter.LIVE -> isLive
+                DeviceFilter.OFFLINE -> !isLive
+                DeviceFilter.GPS_OFF -> !dev.isLocationOn
+            }
+            matchesSearch && matchesFilter
         }
-        matchesSearch && matchesFilter
     }
 
     Box(
@@ -145,13 +151,48 @@ fun DevicesScreen(
                         )
                     }
 
-                    // Live Status Pill
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                        shadowElevation = 4.dp
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Trails Shortcut Button
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onNavigateToHistory()
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Timeline,
+                                    contentDescription = "Activity Trails",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "TRAILS",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        // Live Status Pill
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                            shadowElevation = 4.dp
+                        ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -166,8 +207,9 @@ fun DevicesScreen(
                             Box(
                                 modifier = Modifier
                                     .size(7.dp)
+                                    .graphicsLayer { alpha = if (liveCount > 0) pulseAlpha else 0.4f }
                                     .clip(CircleShape)
-                                    .background(if (liveCount > 0) Color(0xFF4ADE80).copy(alpha = pulseAlpha) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                    .background(if (liveCount > 0) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
@@ -179,6 +221,7 @@ fun DevicesScreen(
                             )
                         }
                     }
+                }
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -986,9 +1029,8 @@ private fun ActionSheetRow(
             1.dp,
             if (isDestructive) MaterialTheme.colorScheme.error.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
         ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
+        onClick = { onClick() },
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1148,7 +1190,7 @@ private fun ModernDeviceCard(
                                     Icon(
                                         Icons.Default.Navigation,
                                         contentDescription = null,
-                                        modifier = Modifier.size(9.dp).rotate(headingVal),
+                                        modifier = Modifier.size(9.dp).graphicsLayer { rotationZ = headingVal },
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(Modifier.width(3.dp))
@@ -1182,7 +1224,8 @@ private fun ModernDeviceCard(
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(34.dp).clickable { onSpecsClick() }
+                        onClick = { onSpecsClick() },
+                        modifier = Modifier.size(34.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.Info, contentDescription = "Diagnostics", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1193,7 +1236,8 @@ private fun ModernDeviceCard(
                     Surface(
                         shape = CircleShape,
                         color = if (!dev.isLocationOn) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(34.dp).clickable { onLocationToggleClick() }
+                        onClick = { onLocationToggleClick() },
+                        modifier = Modifier.size(34.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -1209,7 +1253,8 @@ private fun ModernDeviceCard(
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(34.dp).clickable { onMicClick() }
+                        onClick = { onMicClick() },
+                        modifier = Modifier.size(34.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.Mic, contentDescription = "Listen", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
@@ -1220,7 +1265,8 @@ private fun ModernDeviceCard(
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(34.dp).clickable { onMoreOptionsClick() }
+                        onClick = { onMoreOptionsClick() },
+                        modifier = Modifier.size(34.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More Options", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1334,7 +1380,7 @@ private fun FilterBadge(
         shape = RoundedCornerShape(10.dp),
         color = if (isSelected) highlightColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         border = BorderStroke(1.dp, if (isSelected) highlightColor.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-        modifier = Modifier.clickable { onClick() }
+        onClick = { onClick() }
     ) {
         Text(
             text = label,

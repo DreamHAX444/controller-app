@@ -1,11 +1,16 @@
 package com.aistudio.missioncontrol.pxytwe
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 data class DeviceTelemetry(
     val name: String,
@@ -36,42 +41,49 @@ object AppState {
     val isDrawingGeofence = mutableStateOf(false)
     val isDebugDeviceMode = mutableStateOf(false)
     
-    // Live device telemetry received from Supabase
+    // Live device telemetry in ultra-fast RAM state
     val activeDevices = mutableStateMapOf<String, DeviceTelemetry>()
-
-    val deviceCurrentZones = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val deviceCurrentZones = mutableStateMapOf<String, String>()
 
     // Siren Preferences
     val isSirenEnabled = mutableStateOf(true)
     val sirenType = mutableStateOf("ALARM")
     val sirenDuration = mutableStateOf(3000L)
 
-    private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+    private val appScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
     private var isInitialized = false
-    private var sharedPrefs: android.content.SharedPreferences? = null
-    private var appContext: android.content.Context? = null
+    private var sharedPrefs: SharedPreferences? = null
+    private var appContext: Context? = null
+    private var cacheFile: File? = null
 
-    fun initialize(context: android.content.Context) {
+    // In-memory cache of deserialized geofences to avoid parsing JSON on every packet
+    private var cachedFencesList: List<com.aistudio.missioncontrol.pxytwe.utils.GeofenceData> = emptyList()
+    private var lastFencesRawStr: String = ""
+
+    fun initialize(context: Context) {
         if (isInitialized) return
         isInitialized = true
         appContext = context.applicationContext
-        sharedPrefs = context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs = context.getSharedPreferences("geofence_prefs", Context.MODE_PRIVATE)
+        cacheFile = File(context.filesDir, "telemetry_disk_cache.json")
         
-        // Load Siren Preferences
+        // 1. Load Siren Preferences
         isSirenEnabled.value = sharedPrefs?.getBoolean("siren_enabled", true) ?: true
         sirenType.value = sharedPrefs?.getString("siren_type", "ALARM") ?: "ALARM"
         sirenDuration.value = sharedPrefs?.getLong("siren_duration", 3000L) ?: 3000L
         
+        // 2. Initialize Event Logger
         EventLogger.initialize(context)
 
+        // 3. ZERO-LATENCY COLD START: Instantly load cached telemetry from Flash Disk into RAM
+        loadTelemetryFromDisk()
+
+        // 4. Launch background worker to sync with Supabase Realtime
         appScope.launch {
-            // Ponytail: Combined retry loop for initial state and realtime.
-            // If the network is down (UnresolvedAddressException), we keep 
-            // exponential backoff until we can reach Supabase.
             var retryDelay = 2000L
             while (true) {
                 try {
-                    // 1. Fetch initial locations first to populate the map
+                    // Fetch initial locations from Supabase REST
                     val initialLocs = SupabaseClientManager.getInitialLocations()
                     val fencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
                     val fences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(fencesStr)
@@ -100,7 +112,6 @@ object AppState {
                             pressure = initialLoc.pressure ?: 0f,
                             lastSeen = parsedTime
                         )
-                        // Only add if we don't have it or if the new one is newer
                         if (existing == null || dev.lastSeen > existing.lastSeen) {
                             activeDevices[dev.name] = dev
                         }
@@ -112,15 +123,15 @@ object AppState {
                         }
                     }
 
-                    // 2. Connect to realtime
+                    // Save snapshot of refreshed devices to disk
+                    saveTelemetryToDisk()
+
+                    // Connect to Supabase Realtime WebSocket
                     SupabaseClientManager.connectRealtime()
                     SupabaseClientManager.startListeningForPongs()
                     val locationsFlow = SupabaseClientManager.listenToLocations()
                     
-                    // Reset retry delay on success
                     retryDelay = 2000L
-                    
-                    // Collect forever until flow ends or exception
                     locationsFlow.collect { loc ->
                         processLocationUpdate(loc)
                     }
@@ -136,51 +147,58 @@ object AppState {
     }
 
     private suspend fun processLocationUpdate(loc: LocationData) {
-        withContext(Dispatchers.Main) {
-            val deviceId = loc.device_id
-            val lat = loc.latitude
-            val lon = loc.longitude
-            val heading = loc.bearing
-            val existing = activeDevices[deviceId]
-            val isFallback = lat == 0.0 && lon == 0.0 && existing != null && (existing.lat != 0.0 || existing.lon != 0.0)
-            val actualLat = if (isFallback) existing!!.lat else lat
-            val actualLon = if (isFallback) existing!!.lon else lon
-            val actualHeading = if (lat == 0.0 && lon == 0.0 && existing != null) existing.heading else heading
+        val deviceId = loc.device_id
+        val lat = loc.latitude
+        val lon = loc.longitude
+        val heading = loc.bearing
 
-            val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
-            if (actualLat != 0.0 || actualLon != 0.0) {
-                newHistory.add(Pair(actualLat, actualLon))
-            }
-            
-            val updatedDev = DeviceTelemetry(
-                name = deviceId,
-                lat = actualLat,
-                lon = actualLon,
-                heading = actualHeading,
-                altitude = loc.altitude ?: existing?.altitude ?: 0.0,
-                accuracy = if (loc.accuracy > 0f) loc.accuracy else existing?.accuracy ?: 0f,
-                speed = loc.speed ?: existing?.speed ?: 0f,
-                battery = loc.battery_level?.toInt() ?: existing?.battery ?: 100,
-                charging = loc.charging ?: existing?.charging ?: false,
-                signal = loc.signal_dbm ?: existing?.signal ?: -85,
-                networkType = loc.network_type ?: existing?.networkType ?: "4G LTE",
-                pitch = loc.pitch ?: existing?.pitch ?: 0f,
-                roll = loc.roll ?: existing?.roll ?: 0f,
-                pressure = loc.pressure ?: existing?.pressure ?: 0f,
-                lastSeen = System.currentTimeMillis(),
-                history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
-                updateCount = (existing?.updateCount ?: 0) + 1,
-                locTimestamp = System.currentTimeMillis(),
-                isLocationOn = if (lat == 0.0 && lon == 0.0 && existing != null) existing.isLocationOn else true
-            )
+        val existing = activeDevices[deviceId]
+        val isFallback = lat == 0.0 && lon == 0.0 && existing != null && (existing.lat != 0.0 || existing.lon != 0.0)
+        val actualLat = if (isFallback) existing!!.lat else lat
+        val actualLon = if (isFallback) existing!!.lon else lon
+        val actualHeading = if (lat == 0.0 && lon == 0.0 && existing != null) existing.heading else heading
+
+        val newHistory = existing?.history?.toMutableList() ?: mutableListOf()
+        if (actualLat != 0.0 || actualLon != 0.0) {
+            newHistory.add(Pair(actualLat, actualLon))
+        }
+
+        val updatedDev = DeviceTelemetry(
+            name = deviceId,
+            lat = actualLat,
+            lon = actualLon,
+            heading = actualHeading,
+            altitude = loc.altitude ?: existing?.altitude ?: 0.0,
+            accuracy = if (loc.accuracy > 0f) loc.accuracy else existing?.accuracy ?: 0f,
+            speed = loc.speed ?: existing?.speed ?: 0f,
+            battery = loc.battery_level?.toInt() ?: existing?.battery ?: 100,
+            charging = loc.charging ?: existing?.charging ?: false,
+            signal = loc.signal_dbm ?: existing?.signal ?: -85,
+            networkType = loc.network_type ?: existing?.networkType ?: "4G LTE",
+            pitch = loc.pitch ?: existing?.pitch ?: 0f,
+            roll = loc.roll ?: existing?.roll ?: 0f,
+            pressure = loc.pressure ?: existing?.pressure ?: 0f,
+            lastSeen = System.currentTimeMillis(),
+            history = if (newHistory.size > 50) newHistory.takeLast(50) else newHistory,
+            updateCount = (existing?.updateCount ?: 0) + 1,
+            locTimestamp = System.currentTimeMillis(),
+            isLocationOn = if (lat == 0.0 && lon == 0.0 && existing != null) existing.isLocationOn else true
+        )
+
+        // Calculate Geofence breach on background thread
+        val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
+        if (currentFencesStr != lastFencesRawStr) {
+            lastFencesRawStr = currentFencesStr
+            cachedFencesList = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
+        }
+        val locGeo = org.osmdroid.util.GeoPoint(actualLat, actualLon)
+        val currentZone = cachedFencesList.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
+        val previousZone = deviceCurrentZones[deviceId]
+
+        // Switch to Main thread ONLY for direct Compose state assignment
+        withContext(Dispatchers.Main) {
             activeDevices[deviceId] = updatedDev
 
-            val currentFencesStr = sharedPrefs?.getString("saved_fences", "") ?: ""
-            val currentFences = com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.deserializeGeofences(currentFencesStr)
-            val locGeo = org.osmdroid.util.GeoPoint(actualLat, actualLon)
-            val currentZone = currentFences.firstOrNull { com.aistudio.missioncontrol.pxytwe.utils.GeofenceUtils.isPointInPolygon(locGeo, it.points) }?.name
-            val previousZone = deviceCurrentZones[deviceId]
-            
             if (currentZone != previousZone) {
                 if (previousZone != null) {
                     EventLogger.logEvent(deviceId, "GEOFENCE_EXIT", "Exited $previousZone")
@@ -194,6 +212,101 @@ object AppState {
                 } else {
                     deviceCurrentZones[deviceId] = currentZone
                 }
+            }
+        }
+
+        // Persist to Disk asynchronously (debounced in IO)
+        saveTelemetryToDisk()
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // PERSISTENT FLASH DISK CACHE SYSTEM (Instant Cold-Start Hydration)
+    // ═════════════════════════════════════════════════════════════════════
+    private fun loadTelemetryFromDisk() {
+        try {
+            val file = cacheFile ?: return
+            if (!file.exists()) return
+            val jsonStr = file.readText()
+            val array = JSONArray(jsonStr)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val name = obj.getString("name")
+                val lat = obj.getDouble("lat")
+                val lon = obj.getDouble("lon")
+                val battery = obj.optInt("battery", 100)
+                val speed = obj.optDouble("speed", 0.0).toFloat()
+                val signal = obj.optInt("signal", -85)
+                val networkType = obj.optString("networkType", "4G LTE")
+                val lastSeen = obj.optLong("lastSeen", System.currentTimeMillis())
+                val heading = obj.optDouble("heading", 0.0).toFloat()
+                val altitude = obj.optDouble("altitude", 0.0)
+                val accuracy = obj.optDouble("accuracy", 0.0).toFloat()
+                val isLocationOn = obj.optBoolean("isLocationOn", true)
+
+                val historyList = mutableListOf<Pair<Double, Double>>()
+                val histArray = obj.optJSONArray("history")
+                if (histArray != null) {
+                    for (j in 0 until histArray.length()) {
+                        val pt = histArray.getJSONObject(j)
+                        historyList.add(Pair(pt.getDouble("lat"), pt.getDouble("lon")))
+                    }
+                }
+
+                activeDevices[name] = DeviceTelemetry(
+                    name = name,
+                    lat = lat,
+                    lon = lon,
+                    battery = battery,
+                    speed = speed,
+                    signal = signal,
+                    networkType = networkType,
+                    lastSeen = lastSeen,
+                    heading = heading,
+                    altitude = altitude,
+                    accuracy = accuracy,
+                    history = historyList,
+                    isLocationOn = isLocationOn
+                )
+            }
+            Log.i("AppState", "Hydrated ${activeDevices.size} devices instantly from Flash Disk Cache!")
+        } catch (e: Exception) {
+            Log.w("AppState", "Could not load disk cache", e)
+        }
+    }
+
+    private fun saveTelemetryToDisk() {
+        appScope.launch {
+            try {
+                val file = cacheFile ?: return@launch
+                val array = JSONArray()
+                activeDevices.values.forEach { dev ->
+                    val obj = JSONObject()
+                    obj.put("name", dev.name)
+                    obj.put("lat", dev.lat)
+                    obj.put("lon", dev.lon)
+                    obj.put("battery", dev.battery)
+                    obj.put("speed", dev.speed.toDouble())
+                    obj.put("signal", dev.signal)
+                    obj.put("networkType", dev.networkType)
+                    obj.put("lastSeen", dev.lastSeen)
+                    obj.put("heading", dev.heading.toDouble())
+                    obj.put("altitude", dev.altitude)
+                    obj.put("accuracy", dev.accuracy.toDouble())
+                    obj.put("isLocationOn", dev.isLocationOn)
+
+                    val histArray = JSONArray()
+                    dev.history.takeLast(25).forEach { pt ->
+                        val pObj = JSONObject()
+                        pObj.put("lat", pt.first)
+                        pObj.put("lon", pt.second)
+                        histArray.put(pObj)
+                    }
+                    obj.put("history", histArray)
+                    array.put(obj)
+                }
+                file.writeText(array.toString())
+            } catch (e: Exception) {
+                // Ignore transient write errors
             }
         }
     }
@@ -217,6 +330,7 @@ object AppState {
                     isLocationOn = isLocationOn
                 )
             }
+            saveTelemetryToDisk()
         }
     }
 
@@ -302,7 +416,6 @@ object AppState {
                 val ringtone = android.media.RingtoneManager.getRingtone(ctx, uri)
                 ringtone?.play()
                 
-                // Stop after configured duration to avoid infinite alarm ringing
                 appScope.launch {
                     kotlinx.coroutines.delay(sirenDuration.value)
                     if (ringtone?.isPlaying == true) {
@@ -315,4 +428,3 @@ object AppState {
         }
     }
 }
-

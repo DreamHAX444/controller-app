@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.getValue
+import com.aistudio.missioncontrol.pxytwe.ui.screens.AppStartupSplashScreen
 import com.aistudio.missioncontrol.pxytwe.ui.screens.PinLockScreen
 import com.aistudio.missioncontrol.pxytwe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -47,15 +48,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Initialize osmdroid configuration
-        Configuration.getInstance().load(applicationContext, getSharedPreferences("geofence_prefs", MODE_PRIVATE))
-        Configuration.getInstance().userAgentValue = packageName
-
-        // Initialize central AppState to start realtime streams
-        com.aistudio.missioncontrol.pxytwe.AppState.initialize(applicationContext)
-        
-        // Initialize ThemeManager for System/Light/Dark switching
-        com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager.init(applicationContext)
+        // Note: Heavy initializations (OsmDroid, AppState, ThemeManager, Supabase)
+        // are offloaded asynchronously into AppStartupSplashScreen for zero-latency cold start.
 
         Log.d(TAG, "MainActivity launched successfully! Hello from Logcat!")
         enableEdgeToEdge()
@@ -66,25 +60,22 @@ class MainActivity : ComponentActivity() {
                 Box(modifier = Modifier.fillMaxSize()) {
                     NavHost(
                         navController = navController,
-                        startDestination = "pin_lock",
+                        startDestination = "startup_loader",
                         modifier = Modifier.fillMaxSize(),
-                        enterTransition = {
-                            androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(400)) +
-                            androidx.compose.animation.scaleIn(initialScale = 0.92f, animationSpec = androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.EaseOutQuint))
-                        },
-                        exitTransition = {
-                            androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)) +
-                            androidx.compose.animation.scaleOut(targetScale = 1.08f, animationSpec = androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.EaseInQuint))
-                        },
-                        popEnterTransition = {
-                            androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(400)) +
-                            androidx.compose.animation.scaleIn(initialScale = 1.08f, animationSpec = androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.EaseOutQuint))
-                        },
-                        popExitTransition = {
-                            androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)) +
-                            androidx.compose.animation.scaleOut(targetScale = 0.92f, animationSpec = androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.EaseInQuint))
-                        }
+                        enterTransition = { androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(180)) },
+                        exitTransition = { androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(140)) },
+                        popEnterTransition = { androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(180)) },
+                        popExitTransition = { androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(140)) }
                     ) {
+                        composable("startup_loader") {
+                            AppStartupSplashScreen(
+                                onBootComplete = {
+                                    navController.navigate("pin_lock") {
+                                        popUpTo("startup_loader") { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
                         composable("pin_lock") {
                             PinLockScreen(
                                 onUnlockSuccess = {
