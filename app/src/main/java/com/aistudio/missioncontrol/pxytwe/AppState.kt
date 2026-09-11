@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.flow.first
 
 data class DeviceTelemetry(
     val name: String,
@@ -132,8 +133,28 @@ object AppState {
                     val locationsFlow = SupabaseClientManager.listenToLocations()
                     
                     retryDelay = 2000L
-                    locationsFlow.collect { loc ->
-                        processLocationUpdate(loc)
+                    
+                    kotlinx.coroutines.coroutineScope {
+                        // Watchdog: If the realtime connection drops and doesn't recover quickly,
+                        // restart the loop to re-fetch REST locations and recreate channels.
+                        launch {
+                            // Wait for initial connection
+                            SupabaseClientManager.connectionState.first { it == SupabaseClientManager.ConnectionState.Connected }
+                            // Monitor for drops
+                            SupabaseClientManager.connectionState.collect { state ->
+                                if (state != SupabaseClientManager.ConnectionState.Connected) {
+                                    kotlinx.coroutines.delay(5000)
+                                    if (SupabaseClientManager.connectionState.value != SupabaseClientManager.ConnectionState.Connected) {
+                                        Log.w("AppState", "Realtime connection stuck/lost for 5s, restarting sync loop...")
+                                        throw IllegalStateException("Realtime connection lost")
+                                    }
+                                }
+                            }
+                        }
+                        
+                        locationsFlow.collect { loc ->
+                            processLocationUpdate(loc)
+                        }
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e

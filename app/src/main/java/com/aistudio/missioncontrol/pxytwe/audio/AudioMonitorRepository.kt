@@ -116,6 +116,15 @@ object AudioMonitorRepository {
         }
     }
 
+    suspend fun keepAlive(deviceId: String): Result<Unit> {
+        return try {
+            SupabaseClientManager.sendCommand(deviceId, "keep_alive_mic")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 
 
     /**
@@ -153,8 +162,16 @@ object AudioMonitorRepository {
         }
         awaitClose {
             CoroutineScope(Dispatchers.IO).launch {
-                try { client.realtime.removeChannel(channel) }
-                catch (e: Exception) { Log.w(TAG, "removeChannel on close failed", e) }
+                try {
+                    // Only remove if it's still the SAME channel instance in the map.
+                    // This prevents the async cleanup of a stopped session from killing a newly started session.
+                    val current = client.realtime.subscriptions.values.find { it.topic == topic }
+                    if (current === channel) {
+                        client.realtime.removeChannel(channel)
+                    }
+                } catch (e: Exception) { 
+                    Log.w(TAG, "removeChannel on close failed", e) 
+                }
             }
         }
     }

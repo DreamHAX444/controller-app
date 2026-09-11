@@ -144,7 +144,7 @@ class AudioMonitorViewModel(
                 while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
                     kotlinx.coroutines.delay(15_000)
                     log("SENDING KEEP-ALIVE…")
-                    AudioMonitorRepository.startMonitoring(deviceId)
+                    AudioMonitorRepository.keepAlive(deviceId)
                 }
             }
         }
@@ -181,11 +181,11 @@ class AudioMonitorViewModel(
             )
         }
         if (sendCommand) {
-            viewModelScope.launch {
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 val r = AudioMonitorRepository.stopMonitoring(did)
                 if (r.isFailure) log("STOP FAILED: ${r.exceptionOrNull()?.message}", LogEntry.Kind.Error)
                 // Only update to Idle if no new session has started in the meantime
-                if (deviceId == null) {
+                if (AudioMonitorRepository.activeSession.value == null) {
                     _ui.update { it.copy(status = MonitorStatus.Idle, statusMessage = null) }
                 }
             }

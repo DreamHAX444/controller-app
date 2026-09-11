@@ -4,7 +4,7 @@ trigger: always_on
 
 # Global Project Rules: Ponytail & UI/UX Pro Max
 
-This project strictly follows two sets of core guidelines for all coding and design tasks:
+This project strictly follows core guidelines for all coding and design tasks:
 
 ## 1. Ponytail (Lazy Senior Dev Mode)
 Always apply the Ponytail philosophy to every task. The best code is the code never written.
@@ -31,6 +31,9 @@ When working on any UI/UX tasks (building screens, components, layouts, styling)
 - Ensure proper color palettes, typography, spacing, and micro-interactions.
 - Comply with UX guidelines and accessibility (WCAG) standards.
 - Use the relevant UI styles (e.g., Glassmorphism, Material Design, Bento Grid, etc.) depending on the task context.
+
+## 3. Agent Memory Updater
+You MUST ALWAYS update `.agent_memory/memory.md` at the end of each task or sub-task to record any modifications, tasks, decisions, and updates made during your session. This ensures a continuous record of changes for the tracker app.
 
 **Remember:** 
 - If a task involves logic, architecture, or backend -> Think **Ponytail**.

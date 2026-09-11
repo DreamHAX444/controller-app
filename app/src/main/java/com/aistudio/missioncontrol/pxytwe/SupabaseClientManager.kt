@@ -25,7 +25,9 @@ import kotlinx.coroutines.async
 import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.broadcast
 import kotlinx.serialization.Serializable
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.request.header
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -85,6 +87,9 @@ object SupabaseClientManager {
             // Ponytail: increase timeout to 30s to avoid HttpRequestTimeoutException
             // on large initial location fetches or slow networks.
             httpConfig {
+                install(DefaultRequest) {
+                    header("x-app-secret", "zns-tracker-secret-2026")
+                }
                 install(HttpTimeout) {
                     requestTimeoutMillis = 30000L
                     connectTimeoutMillis = 10000L
@@ -143,7 +148,9 @@ object SupabaseClientManager {
             try { client.realtime.removeChannel(it) } catch (_: Exception) {}
         }
         val ch = client.realtime.channel(topic)
-        ch.subscribe(blockUntilSubscribed = true)
+        kotlinx.coroutines.withTimeout(15000) {
+            ch.subscribe(blockUntilSubscribed = true)
+        }
         commandsChannel = ch
         return ch
     }
@@ -177,7 +184,13 @@ object SupabaseClientManager {
     }
 
     suspend fun connectRealtime() {
-        client.realtime.connect()
+        try {
+            kotlinx.coroutines.withTimeout(15000) {
+                client.realtime.connect()
+            }
+        } catch (e: Exception) {
+            Log.w("SupabaseClient", "connectRealtime timeout or failed: ${e.message}")
+        }
     }
 
 
@@ -247,10 +260,11 @@ object SupabaseClientManager {
     suspend fun sendCommand(deviceId: String, command: String, params: String? = null) {
         try {
             val payload = CommandPayload(device_id = deviceId, command = command, params = params, status = "pending")
+            var finalPayload = payload
             
             // 1. Insert into database for persistence
             try {
-                client.postgrest["commands"].insert(payload)
+                finalPayload = client.postgrest["commands"].insert(payload) { select() }.decodeSingle<CommandPayload>()
             } catch (e: Exception) {
                 Log.e("SupabaseClient", "Database insert failed for command ($command for $deviceId)", e)
             }
@@ -259,7 +273,7 @@ object SupabaseClientManager {
             val channel = getOrCreateCommandsChannel()
             channel.broadcast(
                 event = "command",
-                message = payload
+                message = finalPayload
             )
             
             // Stagger commands to respect Supabase's 10 events/sec Realtime rate limit
@@ -276,12 +290,18 @@ object SupabaseClientManager {
         val topic = "public:locations"
         val existing = client.realtime.subscriptions.values.find { it.topic == topic }
         if (existing != null) {
-            client.realtime.removeChannel(existing)
+            try {
+                client.realtime.removeChannel(existing)
+            } catch (e: Exception) {
+                Log.w("SupabaseClient", "Failed to remove existing locations channel: ${e.message}")
+            }
         }
         
         val channel = client.realtime.channel(topic)
         val flow = channel.broadcastFlow<LocationData>(event = "location")
-        channel.subscribe(blockUntilSubscribed = true)
+        kotlinx.coroutines.withTimeout(15000) {
+            channel.subscribe(blockUntilSubscribed = true)
+        }
         Log.d("SupabaseClient", "Subscribed to locations channel")
         return flow
     }
