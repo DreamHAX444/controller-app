@@ -55,57 +55,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AppTheme {
-                val navController = rememberNavController()
-
-                Box(modifier = Modifier.fillMaxSize()) {
-                    NavHost(
-                        navController = navController,
-                        startDestination = "startup_loader",
-                        modifier = Modifier.fillMaxSize(),
-                        enterTransition = { androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(180)) },
-                        exitTransition = { androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(140)) },
-                        popEnterTransition = { androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(180)) },
-                        popExitTransition = { androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(140)) }
-                    ) {
-                        composable("startup_loader") {
-                            AppStartupSplashScreen(
-                                onBootComplete = {
-                                    navController.navigate("pin_lock") {
-                                        popUpTo("startup_loader") { inclusive = true }
-                                    }
-                                }
-                            )
-                        }
-                        composable("pin_lock") {
-                            PinLockScreen(
-                                onUnlockSuccess = {
-                                    navController.navigate("main_dashboard") {
-                                        popUpTo("pin_lock") { inclusive = true }
-                                    }
-                                }
-                            )
-                        }
-
-                        composable("main_dashboard") {
-                            com.aistudio.missioncontrol.pxytwe.ui.screens.MainDashboardScreen(
-                                onNavigateToMicMonitor = { deviceId ->
-                                    navController.navigate("mic_monitor/$deviceId")
-                                }
-                            )
-                        }
-
-                        composable(
-                            "mic_monitor/{deviceId}",
-                            arguments = listOf(androidx.navigation.navArgument("deviceId") { type = androidx.navigation.NavType.StringType })
-                        ) { backStackEntry ->
-                            val deviceId = backStackEntry.arguments?.getString("deviceId") ?: ""
-                            com.aistudio.missioncontrol.pxytwe.ui.screens.MicMonitorScreen(
-                                deviceId = deviceId,
-                                onBack = { navController.popBackStack() }
-                            )
-                        }
-                    }
-                }
+                com.aistudio.missioncontrol.pxytwe.ui.navigation.AppNavHost()
             }
         }
     }

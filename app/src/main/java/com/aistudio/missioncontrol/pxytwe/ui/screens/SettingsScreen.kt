@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aistudio.missioncontrol.pxytwe.AppState
 import com.aistudio.missioncontrol.pxytwe.SupabaseClientManager
-import com.aistudio.missioncontrol.pxytwe.audio.AudioMonitorRepository
+
 import com.aistudio.missioncontrol.pxytwe.security.SecurityManager
 import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeManager
 import com.aistudio.missioncontrol.pxytwe.ui.theme.ThemeMode
@@ -68,7 +68,7 @@ fun SettingsScreen(
     }
 
     val isSirenActive = AppState.isSirenEnabled.value
-    val activeMicSession by AudioMonitorRepository.activeSession.collectAsState()
+
 
     Box(
         modifier = Modifier
@@ -179,23 +179,7 @@ fun SettingsScreen(
                             }
                         )
 
-                        ModernSettingsCard(
-                            icon = Icons.Default.GraphicEq,
-                            iconTint = if (activeMicSession != null) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            title = "Live Acoustic Surveillance",
-                            subtitle = if (activeMicSession != null) "Active listening session on $activeMicSession" else "No audio uplink currently broadcasting",
-                            badgeText = if (activeMicSession != null) "ACTIVE" else "STANDBY",
-                            badgeColor = if (activeMicSession != null) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            onClick = {
-                                val currentSession = activeMicSession
-                                if (currentSession != null) {
-                                    scope.launch {
-                                        AudioMonitorRepository.stopMonitoring(currentSession)
-                                        Toast.makeText(context, "Closed audio stream", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        )
+
                     }
                 }
 
@@ -301,7 +285,7 @@ fun SettingsScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 SpecRow("RUNTIME", "Android 15+ / ART Optimized")
                                 SpecRow("UI TOOLKIT", "Jetpack Compose Material 3")
-                                SpecRow("AUDIO CODEC", "PCM 16-bit Mono @ 8kHz")
+
                                 SpecRow("REALTIME STACK", "Supabase Realtime WSS")
                                 SpecRow("GEOFENCE ENGINE", "Osmdroid Spatial Polygon Raycaster")
                             }
@@ -413,7 +397,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SpecRow("CONNECTION STATE", realtimeStatusLabel)
                     SpecRow("BROADCAST CHANNEL", "public:commands")
-                    SpecRow("AUDIO CHANNEL", "public:audio_stream")
+
                     SpecRow("HEARTBEAT INTERVAL", "10 seconds")
                     SpecRow("RECONNECT DELAY", "2 seconds bounded")
                     SpecRow("SDK VERSION", "supabase-kt 2.4.0")

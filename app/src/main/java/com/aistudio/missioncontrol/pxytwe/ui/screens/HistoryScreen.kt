@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aistudio.missioncontrol.pxytwe.AppState
 import com.aistudio.missioncontrol.pxytwe.DeviceTelemetry
-import com.aistudio.missioncontrol.pxytwe.audio.AudioMonitorRepository
+
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -44,11 +44,10 @@ private enum class HistoryFilter {
 }
 
 @Composable
-fun HistoryScreen(onBack: (() -> Unit)? = null, micCallback: ((String) -> Unit)? = null) {
+fun HistoryScreen(onBack: (() -> Unit)? = null) {
     val activeDevices = AppState.activeDevices
     val devices = activeDevices.values.sortedByDescending { it.lastSeen }
-    val activeSession by AudioMonitorRepository.activeSession.collectAsState()
-    val monitorStatus by AudioMonitorRepository.status.collectAsState()
+
     val haptic = LocalHapticFeedback.current
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -235,15 +234,7 @@ fun HistoryScreen(onBack: (() -> Unit)? = null, micCallback: ((String) -> Unit)?
                     contentPadding = PaddingValues(top = 4.dp, bottom = 100.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Active Acoustic Session Hero if live
-                    if (activeSession != null) {
-                        item(key = "active_mic_session_banner") {
-                            ActiveSessionHeroBanner(
-                                status = monitorStatus.name,
-                                sessionId = activeSession!!
-                            )
-                        }
-                    }
+
 
                     // Fleet History Summary Hero
                     item(key = "history_hero_overview") {
@@ -285,8 +276,7 @@ fun HistoryScreen(onBack: (() -> Unit)? = null, micCallback: ((String) -> Unit)?
                     items(filteredDevices, key = { it.name }) { dev ->
                         ModernHistoryCard(
                             dev = dev,
-                            now = now,
-                            onMicClick = micCallback?.let { cb -> { cb(dev.name) } }
+                            now = now
                         )
                     }
                 }
@@ -295,51 +285,6 @@ fun HistoryScreen(onBack: (() -> Unit)? = null, micCallback: ((String) -> Unit)?
     }
 }
 
-@Composable
-private fun ActiveSessionHeroBanner(status: String, sessionId: String) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF4ADE80).copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, Color(0xFF4ADE80).copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4ADE80).copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.GraphicEq,
-                    contentDescription = null,
-                    tint = Color(0xFF4ADE80),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "ACTIVE ACOUSTIC SURVEILLANCE • $status",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF4ADE80),
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "Streaming audio on ${sessionId.take(16)}…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun HistoryOverviewHeroCard(
@@ -445,8 +390,7 @@ private fun HistoryOverviewHeroCard(
 @Composable
 private fun ModernHistoryCard(
     dev: DeviceTelemetry,
-    now: Long,
-    onMicClick: (() -> Unit)? = null
+    now: Long
 ) {
     val haptic = LocalHapticFeedback.current
     val diff = (now - dev.lastSeen).coerceAtLeast(0)
@@ -581,36 +525,7 @@ private fun ModernHistoryCard(
                 )
             }
 
-            // Action: Fast Mic Uplink Button if provided
-            if (onMicClick != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onMicClick()
-                    },
-                    modifier = Modifier.fillMaxWidth().height(38.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.GraphicEq,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "START ACOUSTIC UPLINK",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-                }
-            }
+
         }
     }
 }

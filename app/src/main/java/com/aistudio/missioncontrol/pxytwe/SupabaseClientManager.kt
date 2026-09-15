@@ -57,7 +57,7 @@ data class LocationData(
 )
 
 // Live `commands` row shape — this is what the per-device wake/sleep /
-// mic toggle goes into. `params` and `status` are nullable on the table.
+// toggle goes into. `params` and `status` are nullable on the table.
 @Serializable
 data class CommandPayload(
     val device_id: String,

@@ -56,8 +56,8 @@ sealed class DiagnosticModalState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DevicesScreen(
-    onNavigateToMicMonitor: (String) -> Unit,
-    onNavigateToHistory: () -> Unit = {}
+    onNavigateToHistory: () -> Unit = {},
+    onNavigateToDeviceDetails: (deviceId: String) -> Unit = {}
 ) {
     val activeMap = AppState.activeDevices
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -318,10 +318,7 @@ fun DevicesScreen(
                         ModernDeviceCard(
                             dev = dev,
                             now = now,
-                            onMicClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onNavigateToMicMonitor(dev.name)
-                            },
+
                             onLocationToggleClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 scope.launch {
@@ -400,6 +397,7 @@ fun DevicesScreen(
             dev = currentActionDevice,
             now = now,
             onDismiss = { activeActionMenuDevice = null },
+            onNavigateToDeviceDetails = { onNavigateToDeviceDetails(it) },
             onPingClick = {
                 val targetName = currentActionDevice.name
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -463,11 +461,7 @@ fun DevicesScreen(
                     }
                 }
             },
-            onMicClick = {
-                val targetName = currentActionDevice.name
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onNavigateToMicMonitor(targetName)
-            },
+
             onSpecsClick = {
                 selectedDetailsDevice = currentActionDevice
             },
@@ -855,10 +849,10 @@ private fun DeviceActionsBottomSheet(
     dev: DeviceTelemetry,
     now: Long,
     onDismiss: () -> Unit,
+    onNavigateToDeviceDetails: (deviceId: String) -> Unit,
     onPingClick: () -> Unit,
     onStatusClick: () -> Unit,
     onLocationToggleClick: () -> Unit,
-    onMicClick: () -> Unit,
     onSpecsClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
@@ -966,6 +960,19 @@ private fun DeviceActionsBottomSheet(
                 onClick = {
                     onDismiss()
                     onPingClick()
+                }
+            )
+
+            // Action 1.6: Device Details
+            ActionSheetRow(
+                icon = Icons.Default.Monitor,
+                iconTint = MaterialTheme.colorScheme.primary,
+                iconBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                title = "Device Details",
+                subtitle = "View telemetry and start monitoring",
+                onClick = {
+                    onDismiss()
+                    onNavigateToDeviceDetails(dev.name)
                 }
             )
 
@@ -1082,7 +1089,6 @@ private fun ActionSheetRow(
 private fun ModernDeviceCard(
     dev: DeviceTelemetry,
     now: Long,
-    onMicClick: () -> Unit,
     onLocationToggleClick: () -> Unit,
     onSpecsClick: () -> Unit,
     onMoreOptionsClick: () -> Unit,
@@ -1249,17 +1255,7 @@ private fun ModernDeviceCard(
                         }
                     }
 
-                    // Live Mic Listener Button
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        onClick = { onMicClick() },
-                        modifier = Modifier.size(34.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Mic, contentDescription = "Listen", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
-                        }
-                    }
+
 
                     // More Menu (Opens Bottom Sheet)
                     Surface(

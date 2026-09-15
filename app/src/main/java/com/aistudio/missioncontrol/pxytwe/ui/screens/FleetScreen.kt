@@ -137,9 +137,7 @@ fun DeviceTelemetryDetailsDialog(
 }
 
 @Composable
-fun FleetScreen(
-    onNavigateToMicMonitor: (String) -> Unit
-) {
+fun FleetScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sharedPrefs = remember { context.getSharedPreferences("geofence_prefs", android.content.Context.MODE_PRIVATE) }
@@ -1116,17 +1114,7 @@ fun FleetScreen(
                                     }
                                 }
 
-                                // Live Mic Listener Button
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    onClick = { onNavigateToMicMonitor(selectedDevice) },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Mic, contentDescription = "Mic Monitor", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
-                                    }
-                                }
+
                             }
                         }
 
