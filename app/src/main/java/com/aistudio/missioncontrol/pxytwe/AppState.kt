@@ -54,7 +54,7 @@ object AppState {
     val cameraCapabilities = mutableStateMapOf<String, List<com.aistudio.missioncontrol.pxytwe.camera.CameraDeviceInfo>>()
 
     enum class CameraStartStatus {
-        IDLE, REQUESTING, ACCEPTED, REJECTED, FAILED, OPENING, CAPTURING, STOPPING, STOPPED, ERROR
+        IDLE, REQUESTING, ACCEPTED, REJECTED, FAILED, OPENING, CAPTURING, SWITCHING, STOPPING, STOPPED, ERROR
     }
 
     data class CameraStartState(
@@ -416,7 +416,7 @@ object AppState {
                     }
                 }
             }
-            "start_camera_response" -> {
+            "start_camera_response", "switch_camera_response" -> {
                 appScope.launch(Dispatchers.Main) {
                     try {
                         val json = payload.params ?: "{}"
@@ -431,7 +431,7 @@ object AppState {
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("AppState", "Failed to parse start_camera_response", e)
+                        Log.e("AppState", "Failed to parse response", e)
                     }
                 }
             }
@@ -444,6 +444,7 @@ object AppState {
                         val newStatus = when (stateStr) {
                             "OPENING" -> CameraStartStatus.OPENING
                             "CAPTURING" -> CameraStartStatus.CAPTURING
+                            "SWITCHING" -> CameraStartStatus.SWITCHING
                             "STOPPING" -> CameraStartStatus.STOPPING
                             "ERROR" -> CameraStartStatus.ERROR
                             else -> CameraStartStatus.IDLE
@@ -639,6 +640,74 @@ object AppState {
                             error = "NETWORK_ERROR"
                         )
                     }
+                }
+            }
+        }
+    }
+
+        fun requestSwitchCamera(
+        deviceId: String,
+        cameraId: String,
+        width: Int,
+        height: Int,
+        fps: Int
+    ) {
+        val currentState = cameraStartStates[deviceId] ?: return
+        if (currentState.status == CameraStartStatus.SWITCHING) return
+
+        appScope.launch {
+            // Local validation first
+            val caps = cameraCapabilities[deviceId]
+            val supported = caps != null && com.aistudio.missioncontrol.pxytwe.camera.isConfigurationSupported(
+                caps, cameraId, width, height, fps
+            )
+            
+            val reqId = java.util.UUID.randomUUID().toString()
+            
+            if (!supported) {
+                withContext(Dispatchers.Main) {
+                    cameraStartStates[deviceId] = currentState.copy(
+                        status = CameraStartStatus.REJECTED,
+                        requestId = reqId,
+                        error = "TARGET_CONFIGURATION_NOT_SUPPORTED"
+                    )
+                }
+                return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                cameraStartStates[deviceId] = currentState.copy(
+                    status = CameraStartStatus.SWITCHING,
+                    requestId = reqId,
+                    cameraId = cameraId,
+                    width = width,
+                    height = height,
+                    fps = fps,
+                    telemetry = null, // clear old telemetry!
+                    error = null
+                )
+            }
+            
+            val params = com.aistudio.missioncontrol.pxytwe.camera.StartCameraParams(
+                requestId = reqId,
+                cameraId = cameraId,
+                width = width,
+                height = height,
+                fps = fps
+            )
+            val cmdParams = kotlinx.serialization.json.Json.encodeToString(
+                com.aistudio.missioncontrol.pxytwe.camera.StartCameraParams.serializer(), params
+            )
+            
+            try {
+                SupabaseClientManager.sendCommand(deviceId, "switch_camera", cmdParams)
+            } catch (e: Exception) {
+                Log.e("AppState", "Failed to send switch_camera command", e)
+                withContext(Dispatchers.Main) {
+                    cameraStartStates[deviceId] = cameraStartStates[deviceId]?.copy(
+                        status = CameraStartStatus.FAILED,
+                        error = "Network failure"
+                    ) ?: return@withContext
                 }
             }
         }

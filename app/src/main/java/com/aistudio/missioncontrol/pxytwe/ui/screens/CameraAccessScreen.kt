@@ -472,6 +472,9 @@ fun CameraBrowserContent(
                                         }
                                     }
                                 }
+                                AppState.CameraStartStatus.SWITCHING -> {
+                                    Text("Switching camera...", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                                }
                                 AppState.CameraStartStatus.STOPPING -> {
                                     Text("Camera stopping...", color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
@@ -491,7 +494,15 @@ fun CameraBrowserContent(
                             }
                         }
 
-                        if (startState == null || (startState.status != AppState.CameraStartStatus.REQUESTING && startState.status != AppState.CameraStartStatus.ACCEPTED && startState.status != AppState.CameraStartStatus.OPENING && startState.status != AppState.CameraStartStatus.CAPTURING)) {
+                                                val isActiveOrPending = startState != null && (
+                            startState.status == AppState.CameraStartStatus.REQUESTING ||
+                            startState.status == AppState.CameraStartStatus.ACCEPTED ||
+                            startState.status == AppState.CameraStartStatus.OPENING ||
+                            startState.status == AppState.CameraStartStatus.CAPTURING ||
+                            startState.status == AppState.CameraStartStatus.SWITCHING
+                        )
+
+                        if (!isActiveOrPending) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = {
@@ -507,9 +518,34 @@ fun CameraBrowserContent(
                             ) {
                                 Text("Start Camera")
                             }
+                        } else if (startState != null && startState.cameraId != null && startState.cameraId != finalConfig.cameraId && 
+                            (startState.status == AppState.CameraStartStatus.CAPTURING || startState.status == AppState.CameraStartStatus.OPENING)) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    AppState.requestSwitchCamera(
+                                        deviceId = deviceId,
+                                        cameraId = finalConfig.cameraId,
+                                        width = startState.width ?: finalConfig.width,
+                                        height = startState.height ?: finalConfig.height,
+                                        fps = startState.fps ?: finalConfig.fps
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                            ) {
+                                Text("Switch to this Camera")
+                            }
                         }
                         
-                        if (startState != null && (startState.status == AppState.CameraStartStatus.ACCEPTED || startState.status == AppState.CameraStartStatus.OPENING || startState.status == AppState.CameraStartStatus.CAPTURING)) {
+                        val isCancellable = startState != null && (
+                            startState.status == AppState.CameraStartStatus.ACCEPTED || 
+                            startState.status == AppState.CameraStartStatus.OPENING || 
+                            startState.status == AppState.CameraStartStatus.CAPTURING ||
+                            startState.status == AppState.CameraStartStatus.SWITCHING
+                        )
+
+                        if (isCancellable) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = {
@@ -521,7 +557,7 @@ fun CameraBrowserContent(
                                 Text("Stop Camera")
                             }
                         }
-                    }
+}
                 }
             } else if (selectedMode == com.aistudio.missioncontrol.pxytwe.camera.CameraQualityMode.CUSTOM && selectedResolution != null && manualSelectedFpsMax != null) {
                 Text("Invalid Configuration Selected", color = MaterialTheme.colorScheme.error)
