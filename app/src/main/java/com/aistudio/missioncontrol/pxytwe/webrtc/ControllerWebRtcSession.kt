@@ -23,7 +23,7 @@ interface WebRtcSessionListener {
     fun onSdpOffer(sdp: SessionDescription)
     fun onSdpAnswer(sdp: SessionDescription)
     fun onConnectionStateChange(state: PeerConnection.PeerConnectionState)
-    fun onRemoteVideoTrack(track: VideoTrack)
+    fun onRemoteVideoTrack(track: VideoTrack, streamId: String?)
     fun onRemoteAudioTrack(track: org.webrtc.AudioTrack)
     fun onDataChannelReceived(channel: DataChannel)
 }
@@ -80,8 +80,9 @@ class ControllerWebRtcSession(
                     override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
                         val track = receiver?.track()
                         if (track is VideoTrack) {
-                            Log.i(tag, "Remote VideoTrack received!")
-                            listener.onRemoteVideoTrack(track)
+                            val streamId = streams?.firstOrNull()?.id
+                            Log.i(tag, "Remote VideoTrack received! streamId=$streamId")
+                            listener.onRemoteVideoTrack(track, streamId)
                         } else if (track is org.webrtc.AudioTrack) {
                             Log.i(tag, "Remote AudioTrack received!")
                             listener.onRemoteAudioTrack(track)

@@ -46,6 +46,31 @@ object AppState {
     val activeDevices = mutableStateMapOf<String, DeviceTelemetry>()
     val deviceCurrentZones = mutableStateMapOf<String, String>()
 
+    enum class CameraCapabilitiesState {
+        IDLE, LOADING, SUCCESS, PERMISSION_REQUIRED, UNAVAILABLE, FAILED
+    }
+
+    val cameraCapabilitiesState = mutableStateMapOf<String, CameraCapabilitiesState>()
+    val cameraCapabilities = mutableStateMapOf<String, List<com.aistudio.missioncontrol.pxytwe.camera.CameraDeviceInfo>>()
+
+    enum class CameraStartStatus {
+        IDLE, REQUESTING, ACCEPTED, REJECTED, FAILED, OPENING, CAPTURING, STOPPING, STOPPED, ERROR
+    }
+
+    data class CameraStartState(
+        val status: CameraStartStatus = CameraStartStatus.IDLE,
+        val requestId: String? = null,
+        val cameraId: String? = null,
+        val width: Int? = null,
+        val height: Int? = null,
+        val fps: Int? = null,
+        val error: String? = null,
+        val telemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload? = null
+    )
+
+    val cameraStartStates = mutableStateMapOf<String, CameraStartState>()
+
+
     // Siren Preferences
     val isSirenEnabled = mutableStateOf(true)
     val sirenType = mutableStateOf("ALARM")
@@ -369,6 +394,89 @@ object AppState {
                     updateDeviceLocationStatus(payload.device_id, true)
                 }
             }
+
+            "camera_capabilities_response" -> {
+                appScope.launch(Dispatchers.Main) {
+                    try {
+                        val json = payload.params ?: "{}"
+                        val response = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.aistudio.missioncontrol.pxytwe.camera.CameraCapabilitiesResponse>(json)
+                        if (response.success && response.cameras != null) {
+                            cameraCapabilities[payload.device_id] = response.cameras
+                            cameraCapabilitiesState[payload.device_id] = CameraCapabilitiesState.SUCCESS
+                        } else {
+                            val errorState = when(response.error) {
+                                "CAMERA_PERMISSION_REQUIRED" -> CameraCapabilitiesState.PERMISSION_REQUIRED
+                                else -> CameraCapabilitiesState.FAILED
+                            }
+                            cameraCapabilitiesState[payload.device_id] = errorState
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AppState", "Failed to parse camera_capabilities_response", e)
+                        cameraCapabilitiesState[payload.device_id] = CameraCapabilitiesState.FAILED
+                    }
+                }
+            }
+            "start_camera_response" -> {
+                appScope.launch(Dispatchers.Main) {
+                    try {
+                        val json = payload.params ?: "{}"
+                        val response = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.aistudio.missioncontrol.pxytwe.camera.StartCameraResponse>(json)
+                        
+                        val currentState = cameraStartStates[payload.device_id]
+                        if (currentState != null && currentState.requestId == response.requestId) {
+                            if (response.success) {
+                                cameraStartStates[payload.device_id] = currentState.copy(status = CameraStartStatus.ACCEPTED, error = null)
+                            } else {
+                                cameraStartStates[payload.device_id] = currentState.copy(status = CameraStartStatus.REJECTED, error = response.error ?: "Unknown error")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AppState", "Failed to parse start_camera_response", e)
+                    }
+                }
+            }
+            "camera_capture_state" -> {
+                appScope.launch(Dispatchers.Main) {
+                    try {
+                        val jsonStr = payload.params ?: "{}"
+                        val jsonObj = org.json.JSONObject(jsonStr)
+                        val stateStr = jsonObj.optString("state", "IDLE")
+                        val newStatus = when (stateStr) {
+                            "OPENING" -> CameraStartStatus.OPENING
+                            "CAPTURING" -> CameraStartStatus.CAPTURING
+                            "STOPPING" -> CameraStartStatus.STOPPING
+                            "ERROR" -> CameraStartStatus.ERROR
+                            else -> CameraStartStatus.IDLE
+                        }
+                        
+                        val currentState = cameraStartStates[payload.device_id]
+                        if (currentState != null) {
+                            cameraStartStates[payload.device_id] = currentState.copy(status = newStatus)
+                        } else {
+                            cameraStartStates[payload.device_id] = CameraStartState(status = newStatus)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AppState", "Failed to parse camera_capture_state", e)
+                    }
+                }
+            }
+            "camera_capture_telemetry" -> {
+                appScope.launch(Dispatchers.Main) {
+                    try {
+                        val jsonStr = payload.params ?: "{}"
+                        val telemetry = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload>(jsonStr)
+                        val currentState = cameraStartStates[payload.device_id]
+                        if (currentState != null) {
+                            cameraStartStates[payload.device_id] = currentState.copy(telemetry = telemetry)
+                        } else {
+                            cameraStartStates[payload.device_id] = CameraStartState(telemetry = telemetry)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("AppState", "Failed to parse camera_capture_telemetry", e)
+                    }
+                }
+            }
+
         }
     }
 
@@ -448,4 +556,102 @@ object AppState {
             }
         }
     }
+
+
+
+    fun requestCameraCapabilities(deviceId: String) {
+        appScope.launch {
+            withContext(Dispatchers.Main) {
+                cameraCapabilitiesState[deviceId] = CameraCapabilitiesState.LOADING
+            }
+            try {
+                val requestId = java.util.UUID.randomUUID().toString()
+                SupabaseClientManager.sendCommand(deviceId, "get_camera_capabilities", requestId)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    cameraCapabilitiesState[deviceId] = CameraCapabilitiesState.FAILED
+                }
+            }
+        }
+    }
+
+    fun requestStartCamera(
+        deviceId: String,
+        cameraId: String,
+        width: Int,
+        height: Int,
+        fps: Int
+    ) {
+        appScope.launch {
+            // Local validation first
+            val caps = cameraCapabilities[deviceId]
+            val supported = caps != null && com.aistudio.missioncontrol.pxytwe.camera.isConfigurationSupported(
+                caps, cameraId, width, height, fps
+            )
+            
+            val reqId = java.util.UUID.randomUUID().toString()
+            
+            if (!supported) {
+                withContext(Dispatchers.Main) {
+                    cameraStartStates[deviceId] = CameraStartState(
+                        status = CameraStartStatus.REJECTED,
+                        requestId = reqId,
+                        cameraId = cameraId,
+                        width = width,
+                        height = height,
+                        fps = fps,
+                        error = "CONFIGURATION_NOT_SUPPORTED"
+                    )
+                }
+                return@launch
+            }
+            
+            withContext(Dispatchers.Main) {
+                cameraStartStates[deviceId] = CameraStartState(
+                    status = CameraStartStatus.REQUESTING,
+                    requestId = reqId,
+                    cameraId = cameraId,
+                    width = width,
+                    height = height,
+                    fps = fps,
+                    error = null
+                )
+            }
+            
+            try {
+                val params = com.aistudio.missioncontrol.pxytwe.camera.StartCameraParams(
+                    requestId = reqId,
+                    cameraId = cameraId,
+                    width = width,
+                    height = height,
+                    fps = fps
+                )
+                val paramsJson = kotlinx.serialization.json.Json.encodeToString(
+                    com.aistudio.missioncontrol.pxytwe.camera.StartCameraParams.serializer(), params
+                )
+                SupabaseClientManager.sendCommand(deviceId, "start_camera", paramsJson)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val current = cameraStartStates[deviceId]
+                    if (current?.requestId == reqId) {
+                        cameraStartStates[deviceId] = current.copy(
+                            status = CameraStartStatus.FAILED,
+                            error = "NETWORK_ERROR"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun requestStopCamera(deviceId: String) {
+        appScope.launch {
+            try {
+                SupabaseClientManager.sendCommand(deviceId, "stop_camera", java.util.UUID.randomUUID().toString())
+            } catch (e: Exception) {
+                android.util.Log.e("AppState", "Failed to send stop_camera", e)
+            }
+        }
+    }
+
 }

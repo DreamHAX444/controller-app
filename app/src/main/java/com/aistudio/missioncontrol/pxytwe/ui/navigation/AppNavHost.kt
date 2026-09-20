@@ -13,6 +13,7 @@ import com.aistudio.missioncontrol.pxytwe.ui.screens.MainDashboardScreen
 import com.aistudio.missioncontrol.pxytwe.ui.screens.PinLockScreen
 import com.aistudio.missioncontrol.pxytwe.ui.screens.ScreenMonitorScreen
 import com.aistudio.missioncontrol.pxytwe.ui.screens.DeviceDetailsScreen
+import com.aistudio.missioncontrol.pxytwe.ui.screens.CameraAccessScreen
 
 @Composable
 fun AppNavHost(
@@ -65,7 +66,21 @@ fun AppNavHost(
                     onBack = { navController.popBackStack() },
                     onNavigateToScreenMonitor = { sid, profile ->
                         navController.navigate(AppRoute.ScreenMonitor.createRoute(deviceId, sid, profile))
+                    },
+                    onNavigateToCameraAccess = {
+                        navController.navigate(AppRoute.CameraAccess.createRoute(deviceId))
                     }
+                )
+            }
+
+            composable(
+                route = AppRoute.CameraAccess.route,
+                arguments = AppRoute.CameraAccess.arguments
+            ) { backStackEntry ->
+                val deviceId = backStackEntry.arguments?.getString("deviceId") ?: return@composable
+                CameraAccessScreen(
+                    deviceId = deviceId,
+                    onBack = { navController.popBackStack() }
                 )
             }
 

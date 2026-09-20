@@ -28,4 +28,9 @@ sealed class AppRoute(val route: String) {
             navArgument("qualityProfile") { type = NavType.StringType }
         )
     }
+
+    object CameraAccess : AppRoute("camera_access/{deviceId}") {
+        fun createRoute(deviceId: String) = "camera_access/$deviceId"
+        val arguments = listOf(navArgument("deviceId") { type = NavType.StringType })
+    }
 }

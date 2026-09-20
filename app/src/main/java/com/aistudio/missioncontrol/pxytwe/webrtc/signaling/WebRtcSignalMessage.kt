@@ -12,8 +12,22 @@ enum class SignalType {
     STOP_REQUEST,
     SESSION_ENDED,
     ERROR,
-    VIDEO_PROFILE
+    VIDEO_PROFILE,
+    CAMERA_TELEMETRY
 }
+
+@Serializable
+data class CameraTelemetryPayload(
+    val requestedWidth: Int,
+    val requestedHeight: Int,
+    val requestedFps: Int,
+    val actualWidth: Int?,
+    val actualHeight: Int?,
+    val observedFps: Double?,
+    val frameCount: Long,
+    val firstFrameTimestampNs: Long?,
+    val lastFrameTimestampNs: Long?
+)
 
 @Serializable
 data class WebRtcSignalMessage(

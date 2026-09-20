@@ -37,7 +37,9 @@ data class ScreenMonitorState(
     val deviceId: String = "",
     val sessionId: String? = null,
     val videoTrack: VideoTrack? = null,
+    val cameraVideoTrack: VideoTrack? = null,
     val audioTrack: org.webrtc.AudioTrack? = null,
+    val cameraTelemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload? = null,
     val isAutoMode: Boolean = true,
     val selectedProfile: String = "BALANCED",
     val networkQuality: String = "UNKNOWN"
@@ -49,6 +51,10 @@ class ScreenMonitorViewModel : ViewModel(), ControllerWebRtcManagerListener {
     val uiState: StateFlow<ScreenMonitorState> = _uiState.asStateFlow()
 
     private var rtcManager: ControllerWebRtcManager? = null
+
+    override fun onCameraTelemetryReceived(telemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload) {
+        _uiState.update { it.copy(cameraTelemetry = telemetry) }
+    }
 
     companion object {
         private const val TAG = "ScreenMonitorVM"
@@ -155,13 +161,21 @@ class ScreenMonitorViewModel : ViewModel(), ControllerWebRtcManagerListener {
         }
     }
 
-    override fun onRemoteVideoTrackReceived(track: VideoTrack) {
-        Log.i(TAG, "VideoTrack received in ViewModel!")
-        _uiState.update { 
-            it.copy(
-                uiState = ScreenMonitorUiState.PLAYING,
-                videoTrack = track
-            ) 
+    override fun onRemoteVideoTrackReceived(track: VideoTrack, streamId: String?) {
+        Log.i(TAG, "VideoTrack received in ViewModel! streamId=$streamId")
+        if (streamId == "camera_stream") {
+            _uiState.update { 
+                it.copy(
+                    cameraVideoTrack = track
+                ) 
+            }
+        } else {
+            _uiState.update { 
+                it.copy(
+                    uiState = ScreenMonitorUiState.PLAYING,
+                    videoTrack = track
+                ) 
+            }
         }
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Monitor
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +24,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 fun DeviceDetailsScreen(
     deviceId: String,
     onBack: () -> Unit,
-    onNavigateToScreenMonitor: (sessionId: String, qualityProfile: String) -> Unit
+    onNavigateToScreenMonitor: (String, String) -> Unit,
+    onNavigateToCameraAccess: () -> Unit
 ) {
     val telemetry = AppState.activeDevices[deviceId]
     
@@ -122,6 +124,19 @@ fun DeviceDetailsScreen(
                 Icon(Icons.Default.Monitor, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("START SCREEN MONITOR")
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onNavigateToCameraAccess,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("CAMERA ACCESS")
             }
         }
     }

@@ -56,14 +56,23 @@ data class LocationData(
     val created_at: String
 )
 
-// Live `commands` row shape — this is what the per-device wake/sleep /
-// toggle goes into. `params` and `status` are nullable on the table.
+// Internal model specifically for inserting without ID collision
+@Serializable
+private data class CommandInsertPayload(
+    val device_id: String,
+    val command: String,
+    val params: String? = null,
+    val status: String = "pending"
+)
+
+// Live `commands` row shape and Realtime payload
 @Serializable
 data class CommandPayload(
     val device_id: String,
     val command: String, // "wake" | "sleep" | "start_mic" | "stop_mic"
     val params: String? = null, // JSON encoded payload for the tracker
-    val status: String? = "pending"
+    val status: String? = null,
+    val id: Long? = null
 )
 
 /**
@@ -259,14 +268,22 @@ object SupabaseClientManager {
 
     suspend fun sendCommand(deviceId: String, command: String, params: String? = null) {
         try {
-            val payload = CommandPayload(device_id = deviceId, command = command, params = params, status = "pending")
-            var finalPayload = payload
+            val isQueuedCommand = (command == "wake" || command == "sleep")
+            var finalPayload = CommandPayload(
+                device_id = deviceId, 
+                command = command, 
+                params = params, 
+                status = if (isQueuedCommand) "pending" else null
+            )
             
-            // 1. Insert into database for persistence
-            try {
-                finalPayload = client.postgrest["commands"].insert(payload) { select() }.decodeSingle<CommandPayload>()
-            } catch (e: Exception) {
-                Log.e("SupabaseClient", "Database insert failed for command ($command for $deviceId)", e)
+            // 1. Insert into database for persistence ONLY if it's a queued command
+            if (isQueuedCommand) {
+                try {
+                    val insertPayload = CommandInsertPayload(device_id = deviceId, command = command, params = params, status = "pending")
+                    finalPayload = client.postgrest["commands"].insert(insertPayload) { select() }.decodeSingle<CommandPayload>()
+                } catch (e: Exception) {
+                    Log.e("SupabaseClient", "Database insert failed for queued command ($command for $deviceId)", e)
+                }
             }
             
             // 2. Broadcast for real-time delivery

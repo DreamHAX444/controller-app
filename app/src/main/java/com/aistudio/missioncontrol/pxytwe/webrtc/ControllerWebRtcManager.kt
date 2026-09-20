@@ -30,8 +30,9 @@ enum class ControllerSessionState {
 }
 
 interface ControllerWebRtcManagerListener {
-    fun onRemoteVideoTrackReceived(track: VideoTrack)
+    fun onRemoteVideoTrackReceived(track: VideoTrack, streamId: String?)
     fun onRemoteAudioTrackReceived(track: org.webrtc.AudioTrack)
+    fun onCameraTelemetryReceived(telemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload)
 }
 
 class ControllerWebRtcManager(
@@ -129,6 +130,12 @@ class ControllerWebRtcManager(
                     webRtcSession?.addIceCandidate(candidate)
                 }
             }
+            SignalType.CAMERA_TELEMETRY -> {
+                msg.payload?.let {
+                    val payload = Json.decodeFromJsonElement<com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload>(it)
+                    listener.onCameraTelemetryReceived(payload)
+                }
+            }
             SignalType.SESSION_ENDED -> {
                 stop()
             }
@@ -181,13 +188,15 @@ class ControllerWebRtcManager(
                     else -> {}
                 }
             }
-            override fun onRemoteVideoTrack(track: VideoTrack) {
+            override fun onRemoteVideoTrack(track: VideoTrack, streamId: String?) {
                 if (generation != currentGeneration) return
                 track.setEnabled(true)
-                track.addSink { frame ->
-                    avSyncController?.onVideoFrameArrived(frame)
+                if (streamId != "camera_stream") {
+                    track.addSink { frame ->
+                        avSyncController?.onVideoFrameArrived(frame)
+                    }
                 }
-                listener.onRemoteVideoTrackReceived(track)
+                listener.onRemoteVideoTrackReceived(track, streamId)
             }
             override fun onRemoteAudioTrack(track: org.webrtc.AudioTrack) {
                 if (generation != currentGeneration) return
