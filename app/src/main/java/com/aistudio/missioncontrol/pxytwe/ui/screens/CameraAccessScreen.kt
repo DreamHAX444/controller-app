@@ -475,6 +475,9 @@ fun CameraBrowserContent(
                                 AppState.CameraStartStatus.SWITCHING -> {
                                     Text("Switching camera...", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
                                 }
+                                AppState.CameraStartStatus.RESTORING -> {
+                                    Text("Switch failed — previous camera restored...", color = androidx.compose.ui.graphics.Color(0xFFE65100), fontWeight = FontWeight.Bold)
+                                }
                                 AppState.CameraStartStatus.STOPPING -> {
                                     Text("Camera stopping...", color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
@@ -499,7 +502,8 @@ fun CameraBrowserContent(
                             startState.status == AppState.CameraStartStatus.ACCEPTED ||
                             startState.status == AppState.CameraStartStatus.OPENING ||
                             startState.status == AppState.CameraStartStatus.CAPTURING ||
-                            startState.status == AppState.CameraStartStatus.SWITCHING
+                            startState.status == AppState.CameraStartStatus.SWITCHING ||
+                            startState.status == AppState.CameraStartStatus.RESTORING
                         )
 
                         if (!isActiveOrPending) {
@@ -542,7 +546,8 @@ fun CameraBrowserContent(
                             startState.status == AppState.CameraStartStatus.ACCEPTED || 
                             startState.status == AppState.CameraStartStatus.OPENING || 
                             startState.status == AppState.CameraStartStatus.CAPTURING ||
-                            startState.status == AppState.CameraStartStatus.SWITCHING
+                            startState.status == AppState.CameraStartStatus.SWITCHING ||
+                            startState.status == AppState.CameraStartStatus.RESTORING
                         )
 
                         if (isCancellable) {

@@ -26,7 +26,8 @@ data class CameraTelemetryPayload(
     val observedFps: Double?,
     val frameCount: Long,
     val firstFrameTimestampNs: Long?,
-    val lastFrameTimestampNs: Long?
+    val lastFrameTimestampNs: Long?,
+    val cameraGeneration: Long = 0L
 )
 
 @Serializable

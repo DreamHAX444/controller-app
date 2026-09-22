@@ -54,7 +54,7 @@ object AppState {
     val cameraCapabilities = mutableStateMapOf<String, List<com.aistudio.missioncontrol.pxytwe.camera.CameraDeviceInfo>>()
 
     enum class CameraStartStatus {
-        IDLE, REQUESTING, ACCEPTED, REJECTED, FAILED, OPENING, CAPTURING, SWITCHING, STOPPING, STOPPED, ERROR
+        IDLE, REQUESTING, ACCEPTED, REJECTED, FAILED, OPENING, CAPTURING, SWITCHING, RESTORING, STOPPING, STOPPED, ERROR
     }
 
     data class CameraStartState(
@@ -65,7 +65,8 @@ object AppState {
         val height: Int? = null,
         val fps: Int? = null,
         val error: String? = null,
-        val telemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload? = null
+        val telemetry: com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload? = null,
+        val activeGeneration: Long = -1L
     )
 
     val cameraStartStates = mutableStateMapOf<String, CameraStartState>()
@@ -441,7 +442,9 @@ object AppState {
                         val jsonStr = payload.params ?: "{}"
                         val jsonObj = org.json.JSONObject(jsonStr)
                         val stateStr = jsonObj.optString("state", "IDLE")
+                          val generation = jsonObj.optLong("generation", -1L)
                         val newStatus = when (stateStr) {
+                              "RESTORING" -> CameraStartStatus.RESTORING
                             "OPENING" -> CameraStartStatus.OPENING
                             "CAPTURING" -> CameraStartStatus.CAPTURING
                             "SWITCHING" -> CameraStartStatus.SWITCHING
@@ -452,9 +455,9 @@ object AppState {
                         
                         val currentState = cameraStartStates[payload.device_id]
                         if (currentState != null) {
-                            cameraStartStates[payload.device_id] = currentState.copy(status = newStatus)
+                            cameraStartStates[payload.device_id] = currentState.copy(status = newStatus, activeGeneration = if (generation >= 0) generation else currentState.activeGeneration)
                         } else {
-                            cameraStartStates[payload.device_id] = CameraStartState(status = newStatus)
+                            cameraStartStates[payload.device_id] = CameraStartState(status = newStatus, activeGeneration = generation)
                         }
                     } catch (e: Exception) {
                         Log.e("AppState", "Failed to parse camera_capture_state", e)
@@ -468,9 +471,13 @@ object AppState {
                         val telemetry = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload>(jsonStr)
                         val currentState = cameraStartStates[payload.device_id]
                         if (currentState != null) {
-                            cameraStartStates[payload.device_id] = currentState.copy(telemetry = telemetry)
+                            if (telemetry.cameraGeneration == currentState.activeGeneration) {
+                                cameraStartStates[payload.device_id] = currentState.copy(telemetry = telemetry)
+                            } else {
+                                Log.w("AppState", "Ignoring stale telemetry for generation ${telemetry.cameraGeneration} (expected ${currentState.activeGeneration})")
+                            }
                         } else {
-                            cameraStartStates[payload.device_id] = CameraStartState(telemetry = telemetry)
+                            cameraStartStates[payload.device_id] = CameraStartState(telemetry = telemetry, activeGeneration = telemetry.cameraGeneration)
                         }
                     } catch (e: Exception) {
                         Log.e("AppState", "Failed to parse camera_capture_telemetry", e)

@@ -186,6 +186,14 @@ object SupabaseClientManager {
                         }
                     }
                 }
+                launch {
+                    // Camera state & telemetry broadcasts use event="telemetry" to avoid
+                    // self-feedback on the tracker side.
+                    channel.broadcastFlow<CommandPayload>(event = "telemetry").collect { payload ->
+                        Log.d("SupabaseClient", "Telemetry event received from ${payload.device_id}: ${payload.command}")
+                        AppState.handleIncomingCommand(payload)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("SupabaseClient", "startListeningForPongs failed", e)

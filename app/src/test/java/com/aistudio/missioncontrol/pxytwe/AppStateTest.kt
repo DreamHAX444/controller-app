@@ -1,88 +1,109 @@
 package com.aistudio.missioncontrol.pxytwe
 
-import org.junit.Assert.*
-import org.junit.Test
 import com.aistudio.missioncontrol.pxytwe.webrtc.signaling.CameraTelemetryPayload
+import com.aistudio.missioncontrol.pxytwe.CommandPayload
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import kotlinx.serialization.json.Json
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppStateTest {
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setup() {
+        Dispatchers.setMain(testDispatcher)
+        AppState.cameraStartStates.clear()
+    }
+
+    @After
+    fun teardown() {
+        Dispatchers.resetMain()
+    }
 
     @Test
-    fun testCameraStateTransitions() {
-        // Initial setup
-        AppState.cameraStartStates["test_device"] = AppState.CameraStartState()
-        var state = AppState.cameraStartStates["test_device"]!!
-        assertEquals(AppState.CameraStartStatus.IDLE, state.status)
-
-        // Requesting
-        state = state.copy(
-            status = AppState.CameraStartStatus.REQUESTING,
-            requestId = "req1",
-            width = 1920,
-            height = 1080,
-            fps = 60
+    fun testStaleTelemetryRejected() = runTest {
+        val deviceId = "device_123"
+        // Setup existing state with activeGeneration = 3
+        AppState.cameraStartStates[deviceId] = AppState.CameraStartState(
+            activeGeneration = 3L
         )
-        AppState.cameraStartStates["test_device"] = state
-        assertEquals(AppState.CameraStartStatus.REQUESTING, AppState.cameraStartStates["test_device"]!!.status)
 
-        // Accepted (Controller shouldn't assume CAPTURING yet)
-        state = state.copy(status = AppState.CameraStartStatus.ACCEPTED)
-        AppState.cameraStartStates["test_device"] = state
-        assertEquals(AppState.CameraStartStatus.ACCEPTED, AppState.cameraStartStates["test_device"]!!.status)
-
-        // Actual State initially empty, populated only from telemetry
-        val telemetry = CameraTelemetryPayload(
-            requestedWidth = 1920,
-            requestedHeight = 1080,
-            requestedFps = 60,
-            actualWidth = null,
-            actualHeight = null,
-            observedFps = null,
-            frameCount = 0,
-            firstFrameTimestampNs = null,
-            lastFrameTimestampNs = null
+        // Receive telemetry with generation 2
+        val oldTelemetry = CameraTelemetryPayload(
+            requestedWidth = 1920, requestedHeight = 1080, requestedFps = 30,
+            actualWidth = 1920, actualHeight = 1080, observedFps = 30.0, frameCount = 10,
+            firstFrameTimestampNs = 0L, lastFrameTimestampNs = 0L,
+            cameraGeneration = 2L
         )
-        state = state.copy(status = AppState.CameraStartStatus.OPENING, telemetry = telemetry)
-        AppState.cameraStartStates["test_device"] = state
-        
-        // Ensure requested state is preserved exactly
-        assertEquals(1920, state.telemetry!!.requestedWidth)
-        assertEquals(1080, state.telemetry!!.requestedHeight)
-        assertEquals(60, state.telemetry!!.requestedFps)
-
-        // First-frame capture confirmation
-        val captureTelemetry = telemetry.copy(
-            actualWidth = 1920,
-            actualHeight = 1080,
-            frameCount = 1
+        val cmd2 = CommandPayload(
+            command = "camera_capture_telemetry",
+            device_id = deviceId,
+            params = Json.encodeToString(CameraTelemetryPayload.serializer(), oldTelemetry)
         )
-        state = state.copy(status = AppState.CameraStartStatus.CAPTURING, telemetry = captureTelemetry)
-        AppState.cameraStartStates["test_device"] = state
-        assertEquals(AppState.CameraStartStatus.CAPTURING, state.status)
-        assertEquals(1L, state.telemetry!!.frameCount)
+        AppState.handleIncomingCommand(cmd2)
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        // FPS tolerance / Mismatch detection
-        val mismatchTelemetry = captureTelemetry.copy(
-            observedFps = 48.0
-        )
-        state = state.copy(telemetry = mismatchTelemetry)
-        AppState.cameraStartStates["test_device"] = state
-        assertTrue(Math.abs(state.telemetry!!.observedFps!! - state.telemetry!!.requestedFps) > 5.0)
+        // Verify it was ignored
+        assertNull(AppState.cameraStartStates[deviceId]?.telemetry)
+    }
 
-        // Session reset / Stop clears actual state
-        val newSessionState = AppState.CameraStartState(
-            status = AppState.CameraStartStatus.REQUESTING,
-            requestId = "req2",
-            width = 1280,
-            height = 720,
-            fps = 30
+    @Test
+    fun testFutureTelemetryRejected() = runTest {
+        val deviceId = "device_123"
+        AppState.cameraStartStates[deviceId] = AppState.CameraStartState(
+            activeGeneration = 3L
         )
-        AppState.cameraStartStates["test_device"] = newSessionState
-        assertNull(newSessionState.telemetry) // Ensure old telemetry doesn't leak
-        assertEquals("req2", newSessionState.requestId)
-        
-        // Error state preserves info
-        val errorState = newSessionState.copy(status = AppState.CameraStartStatus.ERROR, error = "Camera not found")
-        AppState.cameraStartStates["test_device"] = errorState
-        assertEquals("Camera not found", errorState.error)
+
+        // Receive telemetry with generation 4 (future)
+        val futureTelemetry = CameraTelemetryPayload(
+            requestedWidth = 1920, requestedHeight = 1080, requestedFps = 30,
+            actualWidth = 1920, actualHeight = 1080, observedFps = 30.0, frameCount = 10,
+            firstFrameTimestampNs = 0L, lastFrameTimestampNs = 0L,
+            cameraGeneration = 4L
+        )
+        val cmd = CommandPayload(
+            command = "camera_capture_telemetry",
+            device_id = deviceId,
+            params = Json.encodeToString(CameraTelemetryPayload.serializer(), futureTelemetry)
+        )
+        AppState.handleIncomingCommand(cmd)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(AppState.cameraStartStates[deviceId]?.telemetry)
+    }
+
+    @Test
+    fun testCurrentTelemetryAccepted() = runTest {
+        val deviceId = "device_123"
+        AppState.cameraStartStates[deviceId] = AppState.CameraStartState(
+            activeGeneration = 3L
+        )
+
+        // Receive telemetry with generation 3 (current)
+        val currentTelemetry = CameraTelemetryPayload(
+            requestedWidth = 1920, requestedHeight = 1080, requestedFps = 30,
+            actualWidth = 1920, actualHeight = 1080, observedFps = 30.0, frameCount = 10,
+            firstFrameTimestampNs = 0L, lastFrameTimestampNs = 0L,
+            cameraGeneration = 3L
+        )
+        val cmd = CommandPayload(
+            command = "camera_capture_telemetry",
+            device_id = deviceId,
+            params = Json.encodeToString(CameraTelemetryPayload.serializer(), currentTelemetry)
+        )
+        AppState.handleIncomingCommand(cmd)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(AppState.cameraStartStates[deviceId]?.telemetry)
+        assertEquals(3L, AppState.cameraStartStates[deviceId]?.telemetry?.cameraGeneration)
     }
 }
